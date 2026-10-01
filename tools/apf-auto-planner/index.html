@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>115 APF Auto Planner</title>
+  <style>
+    :root{--ink:#17132d;--muted:#716b86;--purple:#5b36c7;--purple2:#eee9ff;--orange:#f5a623;--line:#ddd7ed;--panel:#fff;--bg:#f7f5fb}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 Inter,Segoe UI,system-ui,sans-serif}
+    header{background:var(--ink);color:white;padding:22px 28px;display:flex;align-items:center;justify-content:space-between} h1{font-size:22px;margin:0} header p{margin:3px 0 0;color:#cfc8e7;font-size:12px}
+    main{display:grid;grid-template-columns:minmax(500px,1fr) 350px;gap:18px;padding:20px;max-width:1500px;margin:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 5px 22px #24115d0d;padding:16px}.field-card{padding:12px}.canvas-wrap{position:relative;width:100%;aspect-ratio:40/21;border-radius:10px;overflow:hidden;background:#e9f0e8}.canvas-wrap canvas{display:block;width:100%;height:100%;cursor:crosshair}.hint{font-size:12px;color:var(--muted);margin:10px 3px 0}.controls{display:grid;gap:12px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}select,input,button{font:inherit;border:1px solid var(--line);border-radius:8px;padding:9px;background:white;color:var(--ink)}button{cursor:pointer;font-weight:700}button.primary{background:var(--purple);border-color:var(--purple);color:#fff}button.warn{color:#a33c22;background:#fff5f0}.section{border-top:1px solid var(--line);padding-top:13px}.section:first-child{border:0;padding-top:0}.section h2{font-size:14px;margin:0 0 9px}.list{display:grid;gap:6px;max-height:170px;overflow:auto}.item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:#fbfaff}.item.selected{border-color:var(--purple);background:var(--purple2)}.item small{color:var(--muted)}.item button{padding:3px 7px}.code{width:100%;height:290px;resize:vertical;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;background:#17132d;color:#f4f0ff;border-color:#17132d;border-radius:9px;padding:12px}.status{font-size:12px;color:var(--muted);min-height:18px}@media(max-width:950px){main{grid-template-columns:1fr}.canvas-wrap{aspect-ratio:40/21}}
+    .waypoint-panel{position:absolute;top:12px;right:12px;z-index:10;background:#fff;border:2px solid var(--purple);border-radius:12px;box-shadow:0 8px 32px #5b36c744;padding:14px;width:260px;max-height:65vh;overflow:auto;display:none}
+    .waypoint-panel.open{display:block}
+    .waypoint-panel .wp-head{font-size:15px;font-weight:700;margin-bottom:2px}
+    .waypoint-panel .wp-sub{font-size:11px;color:var(--muted);margin-bottom:8px}
+    .waypoint-panel .wp-item{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fbfaff;margin-bottom:6px}
+    .waypoint-panel .wp-item:last-of-type{margin-bottom:0}
+    .waypoint-panel .wp-item-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+    .waypoint-panel .wp-item-hdr small{color:var(--muted)}
+    .waypoint-panel .wp-item-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px}
+    .waypoint-panel .wp-item-row input[type=number]{width:64px;padding:4px 6px}
+    .waypoint-panel .wp-item-row select{font-size:11px;padding:3px}
+    .waypoint-panel .wp-empty{font-size:12px;color:var(--muted);margin:6px 0 0}
+    .waypoint-panel button{padding:6px 10px}
+    @keyframes wpFlash{0%{transform:scale(1);background:#fff}40%{transform:scale(1.04);background:#fef3c7;box-shadow:0 8px 48px #5b36c7ee,0 0 0 4px #5b36c788}100%{transform:scale(1);background:#fff}}
+    .waypoint-panel.flash{animation:wpFlash .5s cubic-bezier(.36,.07,.19,.97)}
+  </style>
+</head>
+<body>
+  <header><div><h1>APF Autonomous Planner</h1><p>Team 115 · click a field point to build a route, then generate Java</p></div><button id="clearAll" class="warn">Clear planner</button></header>
+  <main>
+    <section class="card field-card"><div class="canvas-wrap"><canvas id="field" width="1200" height="630"></canvas><div id="wpPanel" class="waypoint-panel"><div class="wp-head">Waypoint <span id="wpNum">1</span></div><div class="wp-sub" id="wpSub">in autonomous</div><div id="wpWaits" class="wp-waits"></div><button id="wpAddWait" class="primary" style="margin-top:6px">Add wait</button><button id="wpClosePanel" class="warn" style="margin-top:4px">Close</button></div></div><div class="hint">This is the same 2026 field image used by the field tools. The full image maps to 16.541 m × 8.069 m in WPILib blue-origin coordinates: 0,0 is the bottom-left; +X is right and +Y is up. Click to add a robot pose. Drag its footprint to reposition it, or drag the orange heading handle to rotate it. Click a segment to edit its intention. To add a wait action, select a robot point or segment, then click <strong>Add wait</strong> in the sidebar. Shift-click adds an obstacle; drag an obstacle to move it.</div></section>
+    <aside class="card controls">
+      <div class="section"><h2>Route</h2><div class="row"><button id="undo">Undo point</button><button id="clearPoints">Clear points</button></div><div class="row"><button id="apf" class="primary">Optimize curved route</button></div><label style="display:flex;align-items:center;gap:7px;text-transform:none;letter-spacing:0"><input id="faceTravel" type="checkbox" checked style="width:auto;padding:0"> Face direction of travel <span style="font-weight:400">(keeps start/final angles)</span></label><label style="display:flex;align-items:center;gap:7px;text-transform:none;letter-spacing:0"><input id="approachFinal" type="checkbox" style="width:auto;padding:0"> Turn gradually into final heading</label><div class="hint">The first curve leaves in the selected start heading. Final-heading turn visibly rotates each of the last few robot poses toward the final angle.</div><div id="status" class="status"></div></div>
+      <div class="section"><h2>Selected segment</h2><label for="intent">Intention</label><select id="intent"><option>IDLE</option><option>INTAKE</option><option>INTAKE_UP_REV</option><option>SHOOT</option><option>REV</option><option>SCORE_LOW</option><option>SCORE_HIGH</option></select><div class="row" style="margin-top:8px"><label>Max velocity<input id="velocity" type="number" min="0.1" step="0.1" value="2.5"></label><label>Translate kP<input id="tkp" type="number" min="0" step="0.1" value="2.5"></label></div></div>
+      <div class="section"><h2>Wait actions</h2><button id="addWait">Add wait</button><div id="waits" class="list" style="margin-top:8px"></div><div id="waitEditor" hidden><label style="display:block;margin-top:8px">Position<select id="waitPosition"></select></label><div class="row" style="margin-top:8px"><label>Intention<select id="waitIntent"><option>IDLE</option><option>HOME</option><option>SCORE_LOW</option><option>SCORE_HIGH</option><option>MANUAL_UP</option><option>MANUAL_DOWN</option></select></label><label>End condition<select id="waitEndCondition"><option value="time">Time elapsed</option></select></label></div><label style="display:block;margin-top:8px">Duration (s)<input id="waitDuration" type="number" min="0" step="0.1" value="1.0"></label><button id="removeWait" class="warn" style="margin-top:8px">Remove wait</button></div><div class="hint">Waits hold the selected superstructure intention until their time duration elapses. Select a point or segment on the field, then click <strong>Add wait</strong> to place a wait there.</div></div>
+      <div class="section"><h2>Robot footprint</h2><div class="row"><label>Length (m)<input id="robotLength" type="number" min="0.05" step="0.01" value="0.6858"></label><label>Width (m)<input id="robotWidth" type="number" min="0.05" step="0.01" value="0.6858"></label></div><div class="hint">Default footprint: 27 in × 27 in. Every route pose is drawn at this scale.</div><label style="display:block;margin-top:8px">Extra obstacle clearance (m)<input id="safetyMargin" type="number" min="0" step="0.01" value="0.12"></label><div class="hint">This margin is added around the robot's rotation-safe footprint when optimizing around obstacles.</div><label style="display:block;margin-top:8px">Selected robot heading (°)<input id="pointAngle" type="number" step="1" value="0"></label></div>
+      <div class="section"><h2>Obstacles</h2><label>Obstacle map<select id="obstacleMap"><option value="none">No obstacles</option><option value="field">Deployed field obstacles</option><option value="custom">Custom obstacles</option></select></label><div class="row" style="margin-top:8px"><button id="addObstacle">Add obstacle</button><button id="removeObstacle">Remove selected</button></div><div id="obstacles" class="list"></div></div>
+      <div class="section"><h2>Generated routine</h2><label>Routine name<input id="routine" value="PLANNED_AUTO"></label><div id="startPose" class="hint">Place the first route pose to set the autonomous start pose.</div><button id="generate" class="primary" style="margin-top:9px">Generate Java</button><button id="loadJava" style="margin:9px 0 0 6px">Load Java into planner</button><button id="copy" style="margin:9px 0 0 6px">Copy entire class</button><div class="hint">Paste a generated ActionList/Waylist routine here, load it, then edit its poses on the field.</div><textarea id="code" class="code" spellcheck="false"></textarea></div>
+    </aside>
+  </main>
+  <script>
+  const W=16.540988,H=8.069326, canvas=document.querySelector('#field'),ctx=canvas.getContext('2d');
+  // The source image has a 13 px border on both left and right; keep Y unchanged and calibrate X
+  // to the playable field edges. This corresponds to about 0.36 m at the full field length.
+  const FIELD_X_INSET=13/600,FIELD_Y_INSET=18/315;
+  // Keep the full field image aligned to the same coordinate convention as the field tools.
+  const FIELD_IMAGE={x:0,y:0,width:600,height:315};
+  const fieldImage=new Image();fieldImage.onload=draw;fieldImage.src='../../FE-2026-_REBUILT_Playing_Field_With_Fuel_With_Background.png';
+  // Axis-aligned bounds of the polygons in src/main/deploy/obstacles.txt.
+  const FIELD_OBSTACLES=[
+    {x:3.9857,y:6.4249,w:1.1644,h:.3101},{x:3.9708,y:1.3145,w:1.1793,h:.2511},
+    {x:3.9857,y:3.3527,w:1.1644,h:1.2407},{x:11.2406,y:3.4414,w:1.1943,h:1.1077},
+    {x:11.2705,y:6.3806,w:1.1793,h:.3397},{x:11.2257,y:1.2997,w:1.2092,h:.2511}
+  ];
+  const state={points:[],segments:[],waits:[],obstacles:[],selectedSeg:0,selectedPoint:-1,selectedWait:-1,selectedObstacle:-1,drag:null,ignoreClick:false};
+  const el=id=>document.getElementById(id), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  function px(p){return{x:(FIELD_X_INSET+(p.x/W)*(1-2*FIELD_X_INSET))*canvas.width,y:(FIELD_Y_INSET+(1-p.y/H)*(1-2*FIELD_Y_INSET))*canvas.height}} function world(x,y){return{x:clamp(((x/canvas.width)-FIELD_X_INSET)/(1-2*FIELD_X_INSET)*W,0,W),y:clamp((1-((y/canvas.height)-FIELD_Y_INSET)/(1-2*FIELD_Y_INSET))*H,0,H)}} function pointer(e){const r=canvas.getBoundingClientRect();return world((e.clientX-r.left)*canvas.width/r.width,(e.clientY-r.top)*canvas.height/r.height)}
+  function robotDimensions(){return {length:+el('robotLength').value||.6858,width:+el('robotWidth').value||.6858}}
+  function robotHitIndex(p){const {length,width}=robotDimensions();for(let i=state.points.length-1;i>=0;i--){const q=state.points[i],angle=(q.angle||0)*Math.PI/180,dx=p.x-q.x,dy=p.y-q.y;const forward=dx*Math.cos(angle)+dy*Math.sin(angle),side=-dx*Math.sin(angle)+dy*Math.cos(angle);if(Math.abs(forward)<=length/2&&Math.abs(side)<=width/2)return i}return -1}
+  function headingHandle(p){const {length}=robotDimensions(),angle=(p.angle||0)*Math.PI/180;return{x:p.x+Math.cos(angle)*length*.65,y:p.y+Math.sin(angle)*length*.65}}
+  function setHeading(point,p){point.angle=Math.round(Math.atan2(p.y-point.y,p.x-point.x)*180/Math.PI);el('pointAngle').value=point.angle}
+  function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);if(fieldImage.complete&&fieldImage.naturalWidth){const f=FIELD_IMAGE;ctx.drawImage(fieldImage,f.x,f.y,f.width,f.height,0,0,canvas.width,canvas.height)}else{ctx.fillStyle='#dcebd9';ctx.fillRect(0,0,canvas.width,canvas.height)}state.obstacles.forEach((o,i)=>{const a=px({x:o.x,y:o.y+o.h}),b=px({x:o.x+o.w,y:o.y});ctx.fillStyle=i===state.selectedObstacle?'#ed936f':'#dfb39d';ctx.strokeStyle=i===state.selectedObstacle?'#b94424':'#ad755f';ctx.lineWidth=2;ctx.fillRect(a.x,b.y,b.x-a.x,a.y-b.y);ctx.strokeRect(a.x,b.y,b.x-a.x,a.y-b.y)});if(state.points.length>1){ctx.strokeStyle='#5b36c7';ctx.lineWidth=5;ctx.lineJoin='round';ctx.beginPath();state.points.forEach((p,i)=>{const q=px(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke()}const {width:rw,length:rl}=robotDimensions();state.points.forEach((p,i)=>{const q=px(p),ang=-(p.angle||0)*Math.PI/180;ctx.save();ctx.translate(q.x,q.y);ctx.rotate(ang);ctx.fillStyle=i===state.selectedPoint?'#ffd36b':i===0?'#8be0b4':i===state.points.length-1?'#f39b7e':'#fff';ctx.strokeStyle=i===state.selectedPoint?'#5b36c7':'#3f3277';ctx.lineWidth=3;ctx.fillRect(-rl/W*canvas.width/2,-rw/H*canvas.height/2,rl/W*canvas.width,rw/H*canvas.height);ctx.strokeRect(-rl/W*canvas.width/2,-rw/H*canvas.height/2,rl/W*canvas.width,rw/H*canvas.height);ctx.strokeStyle='#ef7d35';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(rl/W*canvas.width*.65,0);ctx.stroke();ctx.fillStyle='#ef7d35';ctx.beginPath();ctx.arc(rl/W*canvas.width*.65,0,6,0,Math.PI*2);ctx.fill();ctx.restore();ctx.fillStyle='#17132d';ctx.font='bold 12px system-ui';ctx.fillText(i+1,q.x+12,q.y-10)});
+  // Draw wait indicators (clock icon + label) at the end of each segment that has waits
+  state.waits.forEach((w,wi)=>{
+    const segIndex=w.afterSegment;
+    if(segIndex<0||segIndex>=state.points.length-1)return;
+    const endPoint=state.points[segIndex+1];
+    const q=px(endPoint);
+    const radius=14;
+    ctx.fillStyle=wi===state.selectedWait?'#f5a623':'#5b36c7';
+    ctx.strokeStyle='#fff';
+    ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(q.x+25,q.y-25,radius,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#fff';
+    ctx.font='bold 12px system-ui';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('W'+(wi+1),q.x+25,q.y-25);
+    ctx.textAlign='start';ctx.textBaseline='alphabetic';
+  });}
+  function renderObstacles(){el('obstacles').innerHTML=state.obstacles.map((o,i)=>`<div class="item ${i===state.selectedObstacle?'selected':''}" data-i="${i}"><span>Obstacle ${i+1}<small> ${o.w.toFixed(1)}×${o.h.toFixed(1)} m</small></span><button data-del="${i}">×</button></div>`).join('');el('obstacles').querySelectorAll('.item').forEach(n=>n.onclick=e=>{if(e.target.dataset.del!==undefined){state.obstacles.splice(+e.target.dataset.del,1);state.selectedObstacle=-1}else state.selectedObstacle=+n.dataset.i;renderObstacles();draw()})}
+  function waitPositionLabel(afterSegment){return afterSegment<0?'Before route':`After segment ${afterSegment+1}`}
+  function renderWaits(){const list=el('waits');list.innerHTML=state.waits.map((w,i)=>`<div class="item ${i===state.selectedWait?'selected':''}" data-i="${i}"><span>${waitPositionLabel(w.afterSegment)}<small> ${w.intent} for ${w.duration_s.toFixed(1)} s</small></span></div>`).join('');list.querySelectorAll('.item').forEach(n=>n.onclick=()=>{state.selectedWait=+n.dataset.i;updateSelectedWait();renderWaits()});el('waitEditor').hidden=state.selectedWait<0}
+  function updateSelectedWait(){const wait=state.waits[state.selectedWait],position=el('waitPosition');if(!wait){el('waitEditor').hidden=true;return}const segmentCount=Math.max(0,state.points.length-1);position.innerHTML=Array.from({length:segmentCount+1},(_,i)=>{const afterSegment=i-1;return `<option value="${afterSegment}">${waitPositionLabel(afterSegment)}</option>`}).join('');position.value=String(Math.min(wait.afterSegment,segmentCount-1));el('waitIntent').value=wait.intent;el('waitEndCondition').value='time';el('waitDuration').value=wait.duration_s;el('waitEditor').hidden=false}
+  function waitsAfter(segment){return state.waits.filter(wait=>wait.afterSegment===segment)}
+  function waitFlags(intent){return intent==='IDLE'?'':`, Flag.${intent}`}
+  function waitsAtPoint(index){const targetSeg=index===0?-1:index-1;return state.waits.reduce((acc,w,i)=>{if(w.afterSegment===targetSeg)acc.push({...w,_idx:i});return acc},[])}
+  function renderWaypointPanel(){const panel=el('wpPanel');if(state.selectedPoint<0){panel.classList.remove('open');return}panel.classList.add('open');const idx=state.selectedPoint;const waits=waitsAtPoint(idx);const items=waits.map((w,i)=>`<div class="wp-item" data-idx="${w._idx}"><div class="wp-item-hdr"><small>wait ${i+1}</small><button class="wp-remove-wait" data-i="${w._idx}" title="Remove">×</button></div><div class="wp-item-row"><label>Duration (s)<input type="number" min="0" step="0.1" value="${w.duration_s.toFixed(1)}" data-i="${w._idx}" class="wp-dur"></label></div><div class="wp-item-row"><label>Intent<select data-i="${w._idx}" class="wp-intent">${['IDLE','HOME','SCORE_LOW','SCORE_HIGH','MANUAL_UP','MANUAL_DOWN'].map(o=>`<option value="${o}"${w.intent===o?' selected':''}>${o}</option>`).join('')}</select></label></div></div>`).join('');const emptyMsg=waits.length?'<div class="wp-empty">Click +Add wait to add another wait here.</div>':'<div class="wp-empty">No waits at this waypoint. Click +Add wait below.</div>';const stamp=Date.now();el('wpNum').textContent=idx+1;el('wpWaits').innerHTML=items+emptyMsg;panel.dataset.lastPoint=idx;panel.dataset.stamp=stamp}
+  function lineIsClear(a,b,clearance){const steps=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/.02));for(let i=0;i<=steps;i++){const t=i/steps,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;if(state.obstacles.some(o=>x>o.x-clearance&&x<o.x+o.w+clearance&&y>o.y-clearance&&y<o.y+o.h+clearance))return false}return true}
+  function resamplePath(points,maxSpacing=.25){const result=[{...points[0]}];for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],distance=Math.hypot(b.x-a.x,b.y-a.y),steps=Math.max(1,Math.ceil(distance/maxSpacing));for(let step=1;step<=steps;step++){const t=step/steps;result.push({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,angle:step===steps?b.angle:a.angle})}}return result}
+  function roundCorners(points,clearance){const rounded=[{...points[0]}];for(let i=1;i<points.length-1;i++){const before=points[i-1],corner=points[i],after=points[i+1],inLength=Math.hypot(corner.x-before.x,corner.y-before.y),outLength=Math.hypot(after.x-corner.x,after.y-corner.y),trim=Math.min(.28,inLength*.35,outLength*.35);if(trim<.04){rounded.push({...corner});continue}const enter={x:corner.x-(corner.x-before.x)/inLength*trim,y:corner.y-(corner.y-before.y)/inLength*trim},exit={x:corner.x+(after.x-corner.x)/outLength*trim,y:corner.y+(after.y-corner.y)/outLength*trim},candidate=[enter];for(let step=1;step<=6;step++){const t=step/6,u=1-t;candidate.push({x:u*u*enter.x+2*u*t*corner.x+t*t*exit.x,y:u*u*enter.y+2*u*t*corner.y+t*t*exit.y})}const safe=lineIsClear(rounded[rounded.length-1],candidate[0],clearance)&&candidate.every((p,j)=>j===0||lineIsClear(candidate[j-1],p,clearance));rounded.push(...(safe?candidate:[{...corner}]))}rounded.push({...points[points.length-1]});return rounded}
+  function optimizeSegment(a,b,clearance,startHeading=null,endHeading=null){let start={...a},goal={...b},prefix=[],suffix=[];if(startHeading!==null){const heading=startHeading*Math.PI/180;for(let distance=.55;distance>=.10;distance-=.05){const candidate={x:a.x+Math.cos(heading)*distance,y:a.y+Math.sin(heading)*distance};if(lineIsClear(a,candidate,clearance)){start=candidate;prefix=[{...a}];break}}}if(endHeading!==null){const heading=endHeading*Math.PI/180;for(let distance=.55;distance>=.10;distance-=.05){const candidate={x:b.x-Math.cos(heading)*distance,y:b.y-Math.sin(heading)*distance};if(lineIsClear(candidate,b,clearance)){goal=candidate;suffix=[{...b}];break}}}const padding=clearance+.30,nodes=[start,goal];state.obstacles.forEach(o=>{const left=o.x-padding,right=o.x+o.w+padding,bottom=o.y-padding,top=o.y+padding+o.h;nodes.push({x:left,y:bottom},{x:left,y:top},{x:right,y:bottom},{x:right,y:top})});const count=nodes.length,cost=Array(count).fill(Infinity),previous=Array(count).fill(-1),visited=Array(count).fill(false);cost[0]=0;for(let step=0;step<count;step++){let current=-1;for(let i=0;i<count;i++)if(!visited[i]&&(current<0||cost[i]<cost[current]))current=i;if(current<0||cost[current]===Infinity)break;if(current===1)break;visited[current]=true;for(let next=0;next<count;next++){if(visited[next]||next===current||!lineIsClear(nodes[current],nodes[next],clearance))continue;const candidate=cost[current]+Math.hypot(nodes[next].x-nodes[current].x,nodes[next].y-nodes[current].y);if(candidate<cost[next]){cost[next]=candidate;previous[next]=current}}}if(cost[1]===Infinity)return null;const route=[];for(let i=1;i>=0;i=previous[i]){route.push(nodes[i]);if(i===0)break}// Straight sections stay as endpoints; only rounded corners add intermediate poses.
+  return roundCorners([...prefix,...route.reverse(),...suffix],clearance)}
+  function applyTravelHeadings(points,startAngle){
+    const finalIndex=points.length-1,finalAngle=points[finalIndex].angle??0;
+    const travelAngles=points.slice(0,-1).map((p,i)=>Math.atan2(points[i+1].y-p.y,points[i+1].x-p.x)*180/Math.PI);
+    for(let i=0;i<finalIndex;i++)points[i].angle=Math.round(travelAngles[i]);
+    points[0].angle=startAngle;
+    points[finalIndex].angle=finalAngle;
+    if(!el('approachFinal').checked||finalIndex<2)return;
+
+    // A swerve can rotate while translating, so blend rotation independently over the final 1.6 m.
+    const blendDistance=1.6,remaining=Array(points.length).fill(0);
+    for(let i=finalIndex-1;i>=0;i--)remaining[i]=remaining[i+1]+Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);
+    for(let i=1;i<finalIndex;i++){
+      const progress=clamp(1-remaining[i]/blendDistance,0,1);
+      if(progress<=0)continue;
+      const delta=((finalAngle-travelAngles[i]+540)%360)-180;
+      points[i].angle=Math.round(travelAngles[i]+delta*progress);
+    }
+  }
+  function applyFinalHeadingApproach(points){
+    const finalIndex=points.length-1,finalAngle=points[finalIndex].angle??0;
+    if(finalIndex<2)return;
+    const blendDistance=1.6,remaining=Array(points.length).fill(0);
+    for(let i=finalIndex-1;i>=0;i--)remaining[i]=remaining[i+1]+Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);
+    let firstBlend=finalIndex-1;
+    while(firstBlend>0&&remaining[firstBlend]<blendDistance)firstBlend--;
+    const initialAngle=points[firstBlend].angle??0;
+    const delta=((finalAngle-initialAngle+540)%360)-180;
+    for(let i=firstBlend+1;i<finalIndex;i++){
+      const progress=clamp(1-remaining[i]/blendDistance,0,1);
+      points[i].angle=Math.round(initialAngle+delta*progress);
+    }
+    points[finalIndex].angle=finalAngle;
+  }
+  function apfRoute(){if(state.points.length<2){el('status').textContent='Add at least a start and end point.';return}const {length,width}=robotDimensions(),clearance=Math.hypot(length/2,width/2)+.12,startAngle=state.points[0].angle||0,finalAngle=state.points[state.points.length-1].angle||0,out=[{...state.points[0]}];for(let s=0;s<state.points.length-1;s++){const segment=optimizeSegment(state.points[s],state.points[s+1],clearance,s===0?startAngle:null,s===state.points.length-2&&el('approachFinal').checked?finalAngle:null);if(!segment){el('status').textContent=`No safe route found for segment ${s+1}. Move the pose or obstacle.`;return}out.push(...segment.slice(1))}if(el('faceTravel').checked)applyTravelHeadings(out,startAngle);state.points=out;state.segments=out.slice(0,-1).map((_,i)=>state.segments[i]||{intent:'IDLE',velocity:2.5,tkp:2.5});el('status').textContent=`Optimized ${out.length} safe path poses with ${(clearance-.12).toFixed(2)} m robot clearance.`;draw()}
+  function updateStartPose(){const start=state.points[0];el('startPose').textContent=start?`Autonomous starts at pose: (${start.x.toFixed(3)}, ${start.y.toFixed(3)}, ${(start.angle||0).toFixed(1)}°)`:'Place the first route pose to set the autonomous start pose.'}
+  // The first pose is both the visual start point and the exact odometry reset pose in Java.
+  function java(){
+    if(state.points.length<2)return '// Add at least two points first.';
+    const name=el('routine').value.replace(/[^A-Za-z0-9_]/g,'_')||'PLANNED_AUTO';
+    let className=name.toLowerCase().split('_').filter(Boolean).map(part=>part[0].toUpperCase()+part.slice(1)).join('')||'PlannedAuto';
+    if(/^\d/.test(className))className=`Auto${className}`;
+    const start=state.points[0];
+    let s=`package frc.robot.auto.routines;
+
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
+import frc.robot.auto.ActionList;
+import frc.robot.auto.Waylist;
+import frc.robot.superstructure.SS.Flag;
+
+/** Generated by the APF Auto Planner. */
+public final class ${className} {
+    private ${className}() {}
+
+    public static ActionList build() {
+        // The planner's first pose is the odometry reset pose.
+        ActionList auto = new ActionList("${name}",
+                new Pose2d(${start.x.toFixed(3)}, ${start.y.toFixed(3)}, Rotation2d.fromDegrees(${(start.angle||0).toFixed(1)})),
+                ActionList.PathingStyle.CONTINUOUS).startActions();
+`;
+    const appendWaits=afterSegment=>{for(const wait of waitsAfter(afterSegment))s+=`        auto.waitFor(${wait.duration_s.toFixed(1)}${waitFlags(wait.intent)}); // ${wait.intent}; ends on time\n\n`;};
+    appendWaits(-1);
+    let i=0,pathIndex=0;
+    while(i<state.points.length-1){
+      const first=state.segments[i]||{intent:'IDLE',velocity:2.5,tkp:2.5};
+      let j=i+1;
+      while(j<state.points.length-1){const q=state.segments[j]||first;if(waitsAfter(j-1).length||q.intent!==first.intent||q.velocity!==first.velocity||q.tkp!==first.tkp)break;j++;}
+      const a=state.points[i];
+      let wl=`        Waylist path${pathIndex} = new Waylist(
+                new Pose2d(${a.x.toFixed(3)}, ${a.y.toFixed(3)}, Rotation2d.fromDegrees(${(a.angle||0).toFixed(1)})), 0.1)`;
+      for(let k=i+1;k<=j;k++){const p=state.points[k];wl+=`
+                .append(new Pose2d(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, Rotation2d.fromDegrees(${(p.angle||0).toFixed(1)})), 0.1)`;}
+      s+=`${wl};
+        auto.driveToPose(path${pathIndex}, ${first.velocity}, ${first.tkp}, 0.2); // ${first.intent}
+
+`;
+      appendWaits(j-1);
+      i=j;pathIndex++;
+    }
+    return s+'        return auto;\n    }\n}\n';
+  }
+  function updateSelected(){const s=state.segments[state.selectedSeg];if(s){el('intent').value=s.intent;el('velocity').value=s.velocity;el('tkp').value=s.tkp}}
+  function selectSegmentAt(p){for(let i=0;i<state.points.length-1;i++){const a=state.points[i],b=state.points[i+1],dx=b.x-a.x,dy=b.y-a.y,t=clamp(((p.x-a.x)*dx+(p.y-a.y)*dy)/(dx*dx+dy*dy||1),0,1),d=Math.hypot(p.x-(a.x+t*dx),p.y-(a.y+t*dy));if(d<.25){state.selectedSeg=i;updateSelected();return true}}return false}
+  canvas.addEventListener('click',e=>{if(state.ignoreClick){state.ignoreClick=false;return}const p=pointer(e);if(e.shiftKey){state.obstacles.push({x:clamp(p.x-.5,0,W-1),y:clamp(p.y-.5,0,H-1),w:1,h:1});state.selectedObstacle=state.obstacles.length-1;renderObstacles();draw();return}const point=robotHitIndex(p);if(point>=0){state.selectedPoint=point;el('pointAngle').value=state.points[point].angle||0;draw();renderWaypointPanel();return}if(selectSegmentAt(p)){draw();return}state.points.push({...p,angle:0});state.selectedPoint=state.points.length-1;el('pointAngle').value=0;state.segments.push({intent:'IDLE',velocity:2.5,tkp:2.5});draw();renderWaypointPanel()});
+  canvas.addEventListener('mousedown',e=>{state._mouseDownX=e.clientX;state._mouseDownY=e.clientY;const p=pointer(e);const handle=state.points.findIndex(q=>Math.hypot(headingHandle(q).x-p.x,headingHandle(q).y-p.y)<.16);if(handle>=0){state.selectedPoint=handle;el('pointAngle').value=state.points[handle].angle||0;state.drag={type:'heading',i:handle};return}const hit=robotHitIndex(p);if(hit>=0){state.selectedPoint=hit;el('pointAngle').value=state.points[hit].angle||0;state.drag={type:'point',i:hit};return}const oi=state.obstacles.findIndex(o=>p.x>=o.x&&p.x<=o.x+o.w&&p.y>=o.y&&p.y<=o.y+o.h);if(oi>=0)state.drag={type:'obstacle',i:oi}});canvas.addEventListener('mousemove',e=>{if(!state.drag)return;const p=pointer(e);if(state.drag.type==='point')state.points[state.drag.i]={...state.points[state.drag.i],x:p.x,y:p.y};else if(state.drag.type==='heading')setHeading(state.points[state.drag.i],p);else{const o=state.obstacles[state.drag.i];o.x=clamp(p.x-o.w/2,0,W-o.w);o.y=clamp(p.y-o.h/2,0,H-o.h)}draw()});window.addEventListener('mouseup',e=>{if(state.drag){const dx=e.clientX-(state._mouseDownX||0),dy=e.clientY-(state._mouseDownY||0);state.ignoreClick=Math.hypot(dx,dy)>3}else state.ignoreClick=false;state.drag=null});
+  el('intent').onchange=e=>{if(state.segments[state.selectedSeg])state.segments[state.selectedSeg].intent=e.target.value};el('velocity').oninput=e=>{if(state.segments[state.selectedSeg])state.segments[state.selectedSeg].velocity=+e.target.value};el('tkp').oninput=e=>{if(state.segments[state.selectedSeg])state.segments[state.selectedSeg].tkp=+e.target.value};el('apf').onclick=apfRoute;el('undo').onclick=()=>{state.points.pop();state.segments.pop();draw()};el('clearPoints').onclick=()=>{state.points=[];state.segments=[];draw()};el('addObstacle').onclick=()=>{state.obstacles.push({x:W/2-0.5,y:H/2-0.5,w:1,h:1});state.selectedObstacle=state.obstacles.length-1;renderObstacles();draw()};el('removeObstacle').onclick=()=>{if(state.selectedObstacle>=0){state.obstacles.splice(state.selectedObstacle,1);state.selectedObstacle=-1;renderObstacles();draw()}};el('clearAll').onclick=()=>{state.points=[];state.segments=[];state.obstacles=[];renderObstacles();draw()};el('copy').onclick=()=>navigator.clipboard.writeText(el('code').value||java());renderObstacles();draw();
+  el('pointAngle').oninput=e=>{if(state.points[state.selectedPoint]){state.points[state.selectedPoint].angle=+e.target.value;draw()}};el('robotLength').oninput=draw;el('robotWidth').oninput=draw;
+  function copyGenerated(){const code=el('code');if(!code.value)code.value=java();code.focus();code.select();code.setSelectionRange(0,code.value.length);const copied=()=>el('status').textContent='Copied the complete Java class.';const fallback=()=>{document.execCommand('copy');copied()};if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(code.value).then(copied).catch(fallback);else fallback()}
+  function generateJava(){el('code').value=java();el('status').textContent=`Generated a complete class with ${state.points.length} poses.`}
+  function loadJava(){
+    const source=el('code').value;
+    const drivePattern=/Waylist\s+path\d+\s*=\s*new Waylist\(([\s\S]*?)\);\s*auto\.driveToPose\(path\d+,\s*([-+.\d]+),\s*([-+.\d]+),[^;]*;\s*(?:\/\/\s*([A-Z_]+))?/g;
+    const posePattern=/new Pose2d\(\s*([-+.\d]+)\s*,\s*([-+.\d]+)\s*,\s*Rotation2d\.fromDegrees\(\s*([-+.\d]+)\s*\)\s*\)/g;
+    const waitPattern=/auto\.waitFor\(\s*([-+.\d]+)\s*(?:,\s*Flag\.([A-Z_]+))?\s*\)/g;
+    if(![...source.matchAll(drivePattern)].length){el('status').textContent='No generated Waylist paths found in the Java text.';return}
+    const events=[];
+    let m;
+    while((m=drivePattern.exec(source))!==null)events.push({type:'drive',index:m.index,match:m});
+    drivePattern.lastIndex=0;
+    while((m=waitPattern.exec(source))!==null)events.push({type:'wait',index:m.index,match:m});
+    events.sort((a,b)=>a.index-b.index);
+    const points=[],segments=[],waits=[];
+    for(const ev of events){
+      if(ev.type==='wait'){
+        waits.push({afterSegment:points.length<2?-1:points.length-2,duration_s:+ev.match[1],intent:ev.match[2]||'IDLE'});
+      } else {
+        const config={intent:ev.match[4]||'IDLE',velocity:+ev.match[2],tkp:+ev.match[3]};
+        for(const match of ev.match[1].matchAll(posePattern)){
+          const point={x:+match[1],y:+match[2],angle:+match[3]},previous=points[points.length-1];
+          if(previous&&Math.abs(previous.x-point.x)<1e-6&&Math.abs(previous.y-point.y)<1e-6&&Math.abs(previous.angle-point.angle)<1e-6)continue;
+          if(previous)segments.push({...config});
+          points.push(point);
+        }
+      }
+    }
+    if(points.length<2){el('status').textContent='The Java text needs at least two Pose2d waypoints.';return}
+    const name=source.match(/new ActionList\("([^"]+)"/);if(name)el('routine').value=name[1];
+    state.points=points;state.segments=segments;state.waits=waits;state.selectedPoint=0;state.selectedSeg=0;state.selectedWait=-1;
+    el('pointAngle').value=points[0].angle;updateSelected();updateStartPose();draw();
+    renderWaits();renderWaypointPanel();
+    el('status').textContent=`Loaded ${points.length} poses and ${waits.length} wait${waits.length===1?'':'s'}.`;
+  }
+  el('generate').onclick=generateJava;
+  el('loadJava').onclick=loadJava;
+  function setObstacleMap(map){
+    if(map==='field')state.obstacles=FIELD_OBSTACLES.map(o=>({...o}));
+    else if(map==='none')state.obstacles=[];
+    state.selectedObstacle=-1;renderObstacles();draw();
+  }
+  el('obstacleMap').onchange=e=>setObstacleMap(e.target.value);
+  el('copy').onclick=copyGenerated;
+  el('apf').onclick=()=>{
+    const finalHeading=el('approachFinal').checked;
+    // Do not bend the route to enter along the final heading: this is a holonomic swerve.
+    // Optimize translation first, then apply the independent rotation profile below.
+    el('approachFinal').checked=false;
+    const margin=Math.max(0,+el('safetyMargin').value||0),obstacleExpansion=margin-.12,originalObstacles=state.obstacles;
+    // apfRoute's base clearance already includes 0.12 m. Expand/shrink only obstacles by the
+    // difference so the displayed robot footprint and its hitbox never change.
+    state.obstacles=originalObstacles.map(o=>({
+      ...o,x:o.x-obstacleExpansion,y:o.y-obstacleExpansion,
+      w:Math.max(.01,o.w+2*obstacleExpansion),h:Math.max(.01,o.h+2*obstacleExpansion)
+    }));
+    try{apfRoute()}finally{state.obstacles=originalObstacles}
+    el('approachFinal').checked=finalHeading;
+    if(finalHeading&&!el('status').textContent.startsWith('No safe')){
+      if(el('faceTravel').checked)applyTravelHeadings(state.points,state.points[0].angle||0);
+      else applyFinalHeadingApproach(state.points);
+    }
+    draw();
+  };
+  canvas.addEventListener('click',updateStartPose);
+  window.addEventListener('mouseup',updateStartPose);
+  el('undo').addEventListener('click',updateStartPose);
+  el('clearPoints').addEventListener('click',updateStartPose);
+  el('clearAll').addEventListener('click',updateStartPose);
+  el('apf').addEventListener('click',updateStartPose);
+  el('pointAngle').addEventListener('input',updateStartPose);
+  el('addObstacle').addEventListener('click',()=>el('obstacleMap').value='custom');
+  el('removeObstacle').addEventListener('click',()=>el('obstacleMap').value='custom');
+  canvas.addEventListener('click',e=>{if(e.shiftKey)el('obstacleMap').value='custom'});
+  el('clearAll').addEventListener('click',()=>el('obstacleMap').value='none');
+  updateStartPose();
+  // Wait action handlers
+  el('addWait').onclick=()=>{
+    // If a robot point is selected, add wait after the segment ending at that point
+    // Otherwise add wait after the currently selected segment (or before route)
+    let afterSegment;
+    if(state.selectedPoint>=1&&state.selectedPoint<state.points.length){
+      afterSegment=state.selectedPoint-1;
+    }else if(state.points.length>1&&state.selectedSeg>=0){
+      afterSegment=state.selectedSeg;
+    }else{
+      afterSegment=-1;
+    }
+    state.waits.push({afterSegment:afterSegment,intent:'IDLE',duration_s:1.0});
+    state.selectedWait=state.waits.length-1;
+    updateSelectedWait();
+    renderWaits();
+    renderWaypointPanel();
+  };
+  el('removeWait').onclick=()=>{
+    if(state.selectedWait>=0){
+      state.waits.splice(state.selectedWait,1);
+      state.selectedWait=-1;
+      renderWaits();
+    }
+  };
+  el('waitPosition').onchange=e=>{
+    if(state.waits[state.selectedWait]){
+      state.waits[state.selectedWait].afterSegment=+e.target.value;
+      renderWaits();
+    }
+  };
+  el('waitIntent').onchange=e=>{
+    if(state.waits[state.selectedWait]){
+      state.waits[state.selectedWait].intent=e.target.value;
+      renderWaits();
+    }
+  };
+  el('waitDuration').oninput=e=>{
+    if(state.waits[state.selectedWait]){
+      state.waits[state.selectedWait].duration_s=+e.target.value;
+      renderWaits();
+    }
+  };
+  el('wpAddWait').onclick=()=>{
+    const targetSeg=state.selectedPoint===0?-1:state.selectedPoint-1;
+    state.waits.push({afterSegment:targetSeg,intent:'IDLE',duration_s:1.0});
+    state.selectedWait=state.waits.length-1;
+    renderWaits();
+    renderWaypointPanel();
+  };
+  el('wpClosePanel').onclick=()=>{el('wpPanel').classList.remove('open')};
+  el('wpWaits').addEventListener('input',e=>{
+    if(e.target.classList.contains('wp-dur')){
+      state.waits[+e.target.dataset.i].duration_s=+e.target.value;
+      renderWaits();
+    }
+    if(e.target.classList.contains('wp-intent')){
+      state.waits[+e.target.dataset.i].intent=e.target.value;
+      renderWaits();
+    }
+  });
+  el('wpWaits').addEventListener('click',e=>{
+    if(e.target.classList.contains('wp-remove-wait')){
+      state.waits.splice(+e.target.dataset.i,1);
+      state.selectedWait=-1;
+      renderWaits();
+      renderWaypointPanel();
+    }
+  });
+  // Double-click on a robot point to select the segment after it (for editing segment intention)
+  canvas.addEventListener('dblclick',e=>{
+    const p=pointer(e);
+    const point=robotHitIndex(p);
+    if(point>0){
+      state.selectedPoint=point;
+      el('pointAngle').value=state.points[point].angle||0;
+      draw();
+      return;
+    }
+    // Otherwise select the segment under the cursor
+    for(let i=0;i<state.points.length-1;i++){
+      const a=state.points[i],b=state.points[i+1],
+            t=clamp(((p.x-a.x)*(b.x-a.x)+(p.y-a.y)*(b.y-a.y))/Math.hypot(b.x-a.x,b.y-a.y)**2,0,1),
+            d=Math.hypot(p.x-(a.x+t*(b.x-a.x)),p.y-(a.y+t*(b.y-a.y)));
+      if(d<.25){state.selectedSeg=i;updateSelected();break}
+    }
+  });
+  renderWaits();
+  // A swerve does not need a translation lead-in to match its starting heading. The selected
+  // clearance directly controls both the collision test and the route's obstacle-corner offset.
+  optimizeSegment=(start,goal,clearance)=>{
+    const padding=clearance+.02,nodes=[{...start},{...goal}];
+    state.obstacles.forEach(o=>{
+      const left=o.x-padding,right=o.x+o.w+padding,bottom=o.y-padding,top=o.y+o.h+padding;
+      nodes.push({x:left,y:bottom},{x:left,y:top},{x:right,y:bottom},{x:right,y:top});
+    });
+    const count=nodes.length,cost=Array(count).fill(Infinity),previous=Array(count).fill(-1),visited=Array(count).fill(false);
+    cost[0]=0;
+    for(let step=0;step<count;step++){
+      let current=-1;
+      for(let i=0;i<count;i++)if(!visited[i]&&(current<0||cost[i]<cost[current]))current=i;
+      if(current<0||cost[current]===Infinity||current===1)break;
+      visited[current]=true;
+      for(let next=0;next<count;next++){
+        if(visited[next]||next===current||!lineIsClear(nodes[current],nodes[next],clearance))continue;
+        const candidate=cost[current]+Math.hypot(nodes[next].x-nodes[current].x,nodes[next].y-nodes[current].y);
+        if(candidate<cost[next]){cost[next]=candidate;previous[next]=current;}
+      }
+    }
+    if(cost[1]===Infinity)return null;
+    const route=[];
+    for(let index=1;index>=0;index=previous[index]){route.push(nodes[index]);if(index===0)break;}
+    return roundCorners(route.reverse(),clearance);
+  };
+  </script>
+</body>
+</html>
