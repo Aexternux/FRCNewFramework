@@ -24,7 +24,9 @@ import com.pathplanner.lib.config.RobotConfig;
 import edu.wpi.first.hal.FRCNetComm.tInstances;
 import edu.wpi.first.hal.FRCNetComm.tResourceType;
 import edu.wpi.first.hal.HAL;
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.Matrix;
+import edu.wpi.first.math.trajectory.TrapezoidProfile;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.estimator.SwerveDrivePoseEstimator;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -64,7 +66,7 @@ public class Drive extends SubsystemBase<PathingMode> {
     private static final int BACK_LEFT_INDEX = 2;
     private static final int BACK_RIGHT_INDEX = 3;
     private static final int ONE_MOTOR_PER_MODULE = 1;
-    private static final double DEFAULT_FOLLOWER_MAX_SPEED_mps = 2.5;
+    private static final double DEFAULT_FOLLOWER_MAX_SPEED_mps = 4;
     private static final double SIM_ANTISKEW_TIME_s = -0.0095;
     private static final double REAL_ANTISKEW_TIME_s = -0.002;
     private static final double FULL_TURN_deg = 180.0;
@@ -84,15 +86,15 @@ public class Drive extends SubsystemBase<PathingMode> {
                             TunerConstants.BackRight.LocationY)));
 
     public static final double MAX_VOLTAGE_V = 12.0;
-    public static final double MAX_LINEAR_VEL_mps = 4.8; // TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
-                                                         // //
-                                                         // 4.483;
-    public static final double MAX_LINEAR_VEL_CONTROLLED_mps = 4.8; // 4
+    public static final double MAX_LINEAR_VEL_mps = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
+    public static final double MAX_LINEAR_VEL_CONTROLLED_mps = MAX_LINEAR_VEL_mps;
     public static final double MAX_LINEAR_VEL_THROTTLED_mps = 3.5;
     public static final double MAX_ANGULAR_VEL_radps = (MAX_LINEAR_VEL_mps / DRIVE_BASE_RADIUS_m);
     public static final double MAX_ANGULAR_VEL_THROTTLED_radps = MAX_ANGULAR_VEL_radps * 0.5;
-    public static final double MAX_FORWARD_ACC_mps2 = 55.0;
-    public static final double MAX_AUTO_FORWARD_ACC_mps2 = 55.0;
+    // Real acceleration caps (55 was effectively unlimited) to cut drive current spikes.
+    // MAX_AUTO_FORWARD_ACC_mps2 is also the PoseFollower's profile acceleration.
+    public static final double MAX_FORWARD_ACC_mps2 = 100.0;
+    public static final double MAX_AUTO_FORWARD_ACC_mps2 = 100.0;
     public static final double MAX_ANGULAR_ACC_radps2 = 22.0 * MAX_ANGULAR_VEL_radps;
     public static final double MAX_TILT_XPOS_ACC_mps2 = 100, MAX_TILT_XNEG_ACC_mps2 = 100;
     public static final double MAX_TILT_YPOS_ACC_mps2 = 100, MAX_TILT_YNEG_ACC_mps2 = 100;
@@ -102,17 +104,6 @@ public class Drive extends SubsystemBase<PathingMode> {
 
     static final Lock odometryLock = new ReentrantLock();
 
-    private static final double ROBOT_MASS_KG = 74.088;
-    private static final double ROBOT_MOI = 6.883;
-    private static final double WHEEL_COF = 1.2;
-    
-    public static RobotConfig PP_CONFIG = new RobotConfig(ROBOT_MASS_KG, ROBOT_MOI,
-            new ModuleConfig(TunerConstants.FrontLeft.WheelRadius,
-                    TunerConstants.kSpeedAt12Volts.in(MetersPerSecond), WHEEL_COF,
-                    DCMotor.getKrakenX60Foc(ONE_MOTOR_PER_MODULE)
-                            .withReduction(TunerConstants.FrontLeft.DriveMotorGearRatio),
-                    TunerConstants.FrontLeft.SlipCurrent, ONE_MOTOR_PER_MODULE),
-            getModuleTranslations());
 
     public static Drive getInstance() {
         if (instance == null) {
@@ -127,7 +118,17 @@ public class Drive extends SubsystemBase<PathingMode> {
     private ChassisSpeeds acc;
     private ChassisSpeeds lastSpeeds;
     private ChassisSpeeds measuredAcc;
-    private boolean trackingRequested;
+    
+    private static final double AIM_HEADING_KP = 4.7558; //LMAO IF SOMEONE FINDS TS IT WILL BE HELLA FUNNY. 115 all larp
+    private static final double AIM_DEADBAND_deg = 1.0;
+    private static final double AIM_MAX_ANGULAR_ACC_radps2 = 20.0;
+    private PathingOverride override = PathingOverride.NONE;
+    private PathingOverride prevOverride = PathingOverride.NONE;
+    private double aimTargetHeading_rad = 0.0;
+    private TrapezoidProfile aimProfile = new TrapezoidProfile(
+            new TrapezoidProfile.Constraints(
+                    MAX_ANGULAR_VEL_radps, AIM_MAX_ANGULAR_ACC_radps2));
+    private TrapezoidProfile.State aimSetpointState = new TrapezoidProfile.State();
     private ChassisSpeeds requestedSpeeds;
 
     private PoseFollower poseFollower = new PoseFollower(new Pose2d(), DEFAULT_FOLLOWER_MAX_SPEED_mps);
@@ -136,7 +137,9 @@ public class Drive extends SubsystemBase<PathingMode> {
 
     private Pose2d targetPose = new Pose2d();
 
-    private final Gyro gyro = new Gyro("Drive/Gyro");
+    private final Gyro gyro = new Gyro(scope() + "/Gyro");
+    private final CollisionEstimator collision = new CollisionEstimator(scope());
+    private boolean collisionCorrectionEnabled = true;
     private final SwerveModule[] modules = new SwerveModule[MODULE_COUNT]; // FL, FR, BL, BR
     private final Alert gyroDisconnectedAlert =
             new Alert("Disconnected gyro, using kinematics as fallback.", AlertType.kError);
@@ -147,14 +150,17 @@ public class Drive extends SubsystemBase<PathingMode> {
             new SwerveModulePosition[] {new SwerveModulePosition(), new SwerveModulePosition(),
                     new SwerveModulePosition(), new SwerveModulePosition()};
     private SwerveDrivePoseEstimator poseEstimator = new SwerveDrivePoseEstimator(kinematics,
-            rawGyroRotation, lastModulePositions, new Pose2d());
+            rawGyroRotation, lastModulePositions, new Pose2d(),
+            // Loose odometry trust so vision corrections actually move the estimate; heading
+            // stays gyro-owned (MegaTag2 contributes no rotation).
+            VecBuilder.fill(0.5, 0.5, 0.1), VecBuilder.fill(0.5, 0.5, 0.5));
 
     private Drive() {
         super("Drive");
-        modules[FRONT_LEFT_INDEX] = new SwerveModule(FRONT_LEFT_INDEX, TunerConstants.FrontLeft);
-        modules[FRONT_RIGHT_INDEX] = new SwerveModule(FRONT_RIGHT_INDEX, TunerConstants.FrontRight);
-        modules[BACK_LEFT_INDEX] = new SwerveModule(BACK_LEFT_INDEX, TunerConstants.BackLeft);
-        modules[BACK_RIGHT_INDEX] = new SwerveModule(BACK_RIGHT_INDEX, TunerConstants.BackRight);
+        modules[FRONT_LEFT_INDEX] = new SwerveModule(scope(), FRONT_LEFT_INDEX, TunerConstants.FrontLeft);
+        modules[FRONT_RIGHT_INDEX] = new SwerveModule(scope(), FRONT_RIGHT_INDEX, TunerConstants.FrontRight);
+        modules[BACK_LEFT_INDEX] = new SwerveModule(scope(), BACK_LEFT_INDEX, TunerConstants.BackLeft);
+        modules[BACK_RIGHT_INDEX] = new SwerveModule(scope(), BACK_RIGHT_INDEX, TunerConstants.BackRight);
 
         // Usage reporting for swerve template
         HAL.report(tResourceType.kResourceType_RobotDrive,
@@ -170,7 +176,7 @@ public class Drive extends SubsystemBase<PathingMode> {
         acc = new ChassisSpeeds();
         lastSpeeds = new ChassisSpeeds();
         measuredAcc = new ChassisSpeeds();
-        trackingRequested = false;
+        override = PathingOverride.NONE;
         gyro.zero(0.0);
         setCommand(PathingMode.DISABLED);
     }
@@ -178,11 +184,14 @@ public class Drive extends SubsystemBase<PathingMode> {
     @Override
     public void inputPeriodic() {
         odometryLock.lock(); // Prevents odometry updates while reading data
-        gyro.readInputs();
-        for (var module : modules) {
-            module.updateInputs();
+        try {
+            gyro.readInputs();
+            for (var module : modules) {
+                module.updateInputs();
+            }
+        } finally {
+            odometryLock.unlock();
         }
-        odometryLock.unlock();
 
         for (var module : modules) {
             module.inputPeriodic();
@@ -196,8 +205,8 @@ public class Drive extends SubsystemBase<PathingMode> {
 
         // Log empty setpoint states when disabled
         if (DriverStation.isDisabled()) {
-            Logger.recordOutput("SwerveStates/Setpoints", new SwerveModuleState[] {});
-            Logger.recordOutput("SwerveStates/SetpointsOptimized", new SwerveModuleState[] {});
+            Logger.recordOutput(scope() + "/SwerveStates/Setpoints", new SwerveModuleState[] {});
+            Logger.recordOutput(scope() + "/SwerveStates/SetpointsOptimized", new SwerveModuleState[] {});
         }
 
         double[] sampleTimestamps = modules[0].getOdometryTimestamps(); // All signals are sampled
@@ -236,7 +245,7 @@ public class Drive extends SubsystemBase<PathingMode> {
     }
 
     @Override
-    protected void handle() {
+    public void handle() {
         switch (getCommand()) {
             case DISABLED:
                 inputSpeeds = new ChassisSpeeds();
@@ -263,23 +272,49 @@ public class Drive extends SubsystemBase<PathingMode> {
                 inputSpeeds = getAllianceFieldRelativeSpeeds(x_, y_, w_);
                 
 
-                if (trackingRequested) {
-                    inputSpeeds = applyTrackingOverride(inputSpeeds);
+                switch (override) {
+                    case TRACKING:
+                        inputSpeeds = applyTrackingOverride(inputSpeeds);
+                        break;
+                    case AIM:
+                        inputSpeeds = applyAimOverride(inputSpeeds);
+                        break;
+                    case NONE:
+                    default:
+                        break;
                 }
 
                 requestedSpeeds = inputSpeeds;
 
                 break;
-            case POSE_FOLLOWING:
+            case POSE_FOLLOW:
                 // Apply the pose follower output to the speeds consumed by the acceleration
                 // limiters and module output stage. Keeping this as a local variable causes the
                 // robot to remain stationary even though the follower is producing a target.
                 inputSpeeds = runPoseFollowing();
+
+                switch (override) {
+                    case TRACKING:
+                        inputSpeeds = applyTrackingOverride(inputSpeeds);
+                        break;
+                    case AIM:
+                        ChassisSpeeds aimSpeeds = applyAimOverride(inputSpeeds);
+                        inputSpeeds = new ChassisSpeeds(0, 0, aimSpeeds.omegaRadiansPerSecond);
+                        break;
+                    case NONE:
+                    default:
+                        break;
+                }
+                requestedSpeeds = inputSpeeds;
+                break;
+            case XLOCK:
+                inputSpeeds = new ChassisSpeeds();
                 requestedSpeeds = inputSpeeds;
                 break;
         }
 
         ChassisSpeeds measuredSpeeds = getChassisSpeeds();
+        updateCollision(measuredSpeeds);
         measuredAcc =
                 ChassisAcceleration.calculate(lastSpeeds, measuredSpeeds, Constants.globalDelta_s);
         lastSpeeds = measuredSpeeds;
@@ -321,13 +356,38 @@ public class Drive extends SubsystemBase<PathingMode> {
         outputSpeeds = ObstacleAvoidance.getInstance().constrain(getPose(), outputSpeeds);
 
         // Log speeds and accelerations
-        Logger.recordOutput("Drive/Speeds/Input", new ChassisSpeeds(si.xi, si.yi, si.wi));
-        Logger.recordOutput("Drive/Speeds/InputVel", inputSpeeds);
-        Logger.recordOutput("Drive/Speeds/MeasuredVel", measuredSpeeds);
-        Logger.recordOutput("Drive/Speeds/OutputVel", outputSpeeds);
-        Logger.recordOutput("Drive/Speeds/InputAcc", inputAcc);
-        Logger.recordOutput("Drive/Speeds/MeasuredAcc", measuredAcc);
-        Logger.recordOutput("Drive/Speeds/OutputAcc", acc);
+        Logger.recordOutput(scope() + "/Speeds/Input", new ChassisSpeeds(si.xi, si.yi, si.wi));
+        Logger.recordOutput(scope() + "/Speeds/InputVel", inputSpeeds);
+        Logger.recordOutput(scope() + "/Speeds/MeasuredVel", measuredSpeeds);
+        Logger.recordOutput(scope() + "/Speeds/OutputVel", outputSpeeds);
+        Logger.recordOutput(scope() + "/Speeds/InputAcc", inputAcc);
+        Logger.recordOutput(scope() + "/Speeds/MeasuredAcc", measuredAcc);
+        Logger.recordOutput(scope() + "/Speeds/OutputAcc", acc);
+        prevOverride = override;
+    }
+
+    /** After a hit in auto, replaces x/y with the IMU-predicted position. Heading is left alone. */
+    private void updateCollision(ChassisSpeeds measuredSpeeds) {
+        // Sim has no IMU, so wheel acceleration alone would read as constant hits.
+        if (Constants.currentMode == Mode.SIM || !gyro.isConnected()) {
+            collision.reset();
+            return;
+        }
+        Translation2d corrected = collision.update(Timer.getFPGATimestamp(), getPose(),
+                measuredSpeeds, gyro.getAccel_mps2(),
+                DriverStation.isAutonomousEnabled() && collisionCorrectionEnabled);
+        if (corrected != null) {
+            correctPoseTranslation(corrected);
+        }
+    }
+
+    public void setCollisionCorrectionEnabled(boolean enabled) {
+        collisionCorrectionEnabled = enabled;
+        Logger.recordOutput(scope() + "/Collision/CorrectionEnabled", enabled);
+    }
+
+    public boolean isInCollision() {
+        return collision.isInHit();
     }
 
     public boolean inBounds(double tz, double tx) {
@@ -349,6 +409,14 @@ public class Drive extends SubsystemBase<PathingMode> {
         SwerveModuleState[] setpointStates =
                 kinematics.toSwerveModuleStates(discreteSpeeds/* , CENTER_OF_ROT */);
         SwerveDriveKinematics.desaturateWheelSpeeds(setpointStates, MAX_LINEAR_VEL_mps);
+
+        if (isCommand(PathingMode.XLOCK)) {
+            Translation2d[] translations = getModuleTranslations();
+            for (int i = 0; i < MODULE_COUNT; i++) {
+                setpointStates[i] = new SwerveModuleState(
+                        0.0, new Rotation2d(translations[i].getX(), translations[i].getY()));
+            }
+        }
 
         // Send setpoints to modules
         SwerveModuleState[] optimizedSetpointStates = new SwerveModuleState[MODULE_COUNT];
@@ -378,12 +446,12 @@ public class Drive extends SubsystemBase<PathingMode> {
         }
 
         // Log setpoint states
-        Logger.recordOutput("Drive/Modules/Mode", mode);
-        Logger.recordOutput("Drive/Modules/Setpoints", setpointStates);
-        Logger.recordOutput("Drive/Modules/SetpointsOptimized", optimizedSetpointStates);
-        Logger.recordOutput("Drive/TrackingRequested", trackingRequested);
-        Logger.recordOutput("Drive/TargetPose", targetPose);
-        Logger.recordOutput("Drive/GyroAngle", getRotation().getDegrees());
+        Logger.recordOutput(scope() + "/Modules/Mode", mode);
+        Logger.recordOutput(scope() + "/Modules/Setpoints", setpointStates);
+        Logger.recordOutput(scope() + "/Modules/SetpointsOptimized", optimizedSetpointStates);
+        Logger.recordOutput(scope() + "/Override", override);
+        Logger.recordOutput(scope() + "/TargetPose", targetPose);
+        Logger.recordOutput(scope() + "/GyroAngle", getRotation().getDegrees());
     }
 
     public boolean velUnder(double mag) {
@@ -393,9 +461,24 @@ public class Drive extends SubsystemBase<PathingMode> {
         return measured < mag;
     }
 
-    /** Sets the driver-owned request for AprilTag alignment assistance. */
-    public void setTrackingRequested(boolean requested) {
-        trackingRequested = requested;
+    public void setOverride(PathingOverride override) {
+        this.override = override;
+    }
+
+    public PathingOverride getOverride() {
+        return override;
+    }
+
+    public boolean isTrackingRequested() {
+        return override == PathingOverride.TRACKING;
+    }
+
+    public boolean isAimRequested() {
+        return override == PathingOverride.AIM;
+    }
+
+    public void setAimTarget(double heading) {
+        aimTargetHeading_rad = heading;
     }
 
     public void setInput(SwerveInput i) {
@@ -419,16 +502,19 @@ public class Drive extends SubsystemBase<PathingMode> {
             return res;
         }
 
+        double max = DriverStation.isAutonomous() ? MAX_AUTO_FORWARD_ACC_mps2
+                : MAX_FORWARD_ACC_mps2;
+
         if (velMag_mps == 0.0) {
-            res.vxMetersPerSecond *= MAX_FORWARD_ACC_mps2 / accMag_mps2;
-            res.vyMetersPerSecond *= MAX_FORWARD_ACC_mps2 / accMag_mps2;
+            // From a standstill: cap (don't stretch) the requested acceleration.
+            double outMag = Math.min(accMag_mps2, max);
+            res.vxMetersPerSecond *= outMag / accMag_mps2;
+            res.vyMetersPerSecond *= outMag / accMag_mps2;
         } else {
 
             double alpha = Math.cos(accAng_rad - velAng_rad);
 
             if (alpha > 0) {
-                double max = DriverStation.isAutonomous() ? MAX_AUTO_FORWARD_ACC_mps2
-                        : MAX_FORWARD_ACC_mps2;
                 double maxFwdAcc = max * (1.0 - velMag_mps / MAX_LINEAR_VEL_mps);
                 double outMag = Math.min(accMag_mps2, maxFwdAcc);
                 res.vxMetersPerSecond *= outMag / accMag_mps2;
@@ -492,7 +578,7 @@ public class Drive extends SubsystemBase<PathingMode> {
     /**
      * Returns the module states (turn angles and drive velocities) for all of the modules.
      */
-    @AutoLogOutput(key = "SwerveStates/Measured")
+    @AutoLogOutput(key = "Subsystems/Drive/SwerveStates/Measured")
     public SwerveModuleState[] getModuleStates() {
         SwerveModuleState[] states = new SwerveModuleState[MODULE_COUNT];
         for (int i = 0; i < MODULE_COUNT; i++) {
@@ -513,7 +599,7 @@ public class Drive extends SubsystemBase<PathingMode> {
     }
 
     /** Returns the measured chassis speeds of the robot. */
-    @AutoLogOutput(key = "SwerveChassisSpeeds/Measured")
+    @AutoLogOutput(key = "Subsystems/Drive/SwerveChassisSpeeds/Measured")
     public ChassisSpeeds getChassisSpeeds() {
         return kinematics.toChassisSpeeds(getModuleStates());
     }
@@ -532,7 +618,7 @@ public class Drive extends SubsystemBase<PathingMode> {
     }
 
     /** Returns the current odometry pose. */
-    @AutoLogOutput(key = "Odometry/Robot")
+    @AutoLogOutput(key = "Subsystems/Drive/Odometry/Robot")
     public Pose2d getPose() {
         return poseEstimator.getEstimatedPosition();
     }
@@ -542,14 +628,52 @@ public class Drive extends SubsystemBase<PathingMode> {
         return getPose().getRotation();
     }
 
+    public double getTilt_deg() {
+        double pitch_rad = gyro.getPitch().getRadians();
+        double roll_rad = gyro.getRoll().getRadians();
+        return Math.toDegrees(Math.acos(Math.cos(pitch_rad) * Math.cos(roll_rad)));
+    }
+
     /** Resets the current odometry pose. */
     public void setPose(Pose2d pose) {
+        collision.reset();
         poseEstimator.resetPosition(rawGyroRotation, getModulePositions(), pose);
         gyro.zero(pose.getRotation().getDegrees());
     }
 
     public void resetPose(Pose2d pose) {
         setPose(pose);
+    }
+
+    public void correctPoseX_m(double newX_m) {
+        collision.reset();
+        odometryLock.lock();
+        try {
+            Pose2d currentPose = poseEstimator.getEstimatedPosition();
+            SwerveModulePosition[] positions = getModulePositions();
+            poseEstimator.resetPosition(rawGyroRotation, positions, new Pose2d(newX_m,
+                    currentPose.getTranslation().getY(), currentPose.getRotation()));
+            for (int i = 0; i < MODULE_COUNT; i++) {
+                lastModulePositions[i] = positions[i];
+            }
+        } finally {
+            odometryLock.unlock();
+        }
+    }
+
+    /** Moves x/y to the given field translation, keeping the current heading. */
+    private void correctPoseTranslation(Translation2d translation_m) {
+        odometryLock.lock();
+        try {
+            SwerveModulePosition[] positions = getModulePositions();
+            poseEstimator.resetPosition(rawGyroRotation, positions,
+                    new Pose2d(translation_m, poseEstimator.getEstimatedPosition().getRotation()));
+            for (int i = 0; i < MODULE_COUNT; i++) {
+                lastModulePositions[i] = positions[i];
+            }
+        } finally {
+            odometryLock.unlock();
+        }
     }
 
     public void setTargetPose(Pose2d tPose, double maxVel, double translation_kP,
@@ -565,26 +689,28 @@ public class Drive extends SubsystemBase<PathingMode> {
             this.poseFollower.reset();
         }
         this.poseFollower.setParams(tPose, maxVel, translation_kP, rotation_kP, preserveMomentum);
-        setCommand(PathingMode.POSE_FOLLOWING);
-    }
-
-    public boolean isTrackingRequested() {
-        return trackingRequested;
+        setCommand(PathingMode.POSE_FOLLOW);
     }
 
 
     public void addVisionMeasurement(Pose2d visionRobotPose, double timestampSeconds) {
         odometryLock.lock();
-        poseEstimator.addVisionMeasurement(visionRobotPose, timestampSeconds);
-        odometryLock.unlock();
+        try {
+            poseEstimator.addVisionMeasurement(visionRobotPose, timestampSeconds);
+        } finally {
+            odometryLock.unlock();
+        }
     }
 
     public void addVisionMeasurement(Pose2d visionRobotPose, double timestampSeconds,
             Matrix<N3, N1> visionMeasurementStdDevs) {
         odometryLock.lock();
-        poseEstimator.addVisionMeasurement(visionRobotPose, timestampSeconds,
-                visionMeasurementStdDevs);
-        odometryLock.unlock();
+        try {
+            poseEstimator.addVisionMeasurement(visionRobotPose, timestampSeconds,
+                    visionMeasurementStdDevs);
+        } finally {
+            odometryLock.unlock();
+        }
     }
 
     public SwerveDrivePoseEstimator getPoseEstimator() {
@@ -616,7 +742,7 @@ public class Drive extends SubsystemBase<PathingMode> {
     // robot should actually do. Three cases:
     private ChassisSpeeds applyTrackingOverride(ChassisSpeeds driverSpeeds) {
         Tracking tracking = Tracking.getInstance();
-        Logger.recordOutput("Drive/Tracking/TagId", tracking.getTargetTag());
+        Logger.recordOutput(scope() + "/Tracking/TagId", tracking.getTargetTag());
 
         if (!tracking.isEnabled()) {
             return driverSpeeds;
@@ -639,6 +765,49 @@ public class Drive extends SubsystemBase<PathingMode> {
         return new ChassisSpeeds(follow.vxMetersPerSecond, follow.vyMetersPerSecond, omega_radps);
     }
 
+    private ChassisSpeeds applyAimOverride(ChassisSpeeds driverSpeeds) {
+        double actual_rad = getRotation().getRadians();
+        if (prevOverride != PathingOverride.AIM) {
+            aimSetpointState = new TrapezoidProfile.State(
+                    actual_rad, getChassisSpeeds().omegaRadiansPerSecond);
+        }
+        actual_rad += 2.0 * Math.PI * Math.round(
+                (aimSetpointState.position - actual_rad) / (2.0 * Math.PI));
+        double error_rad = aimTargetHeading_rad - actual_rad;
+        while (error_rad > Math.PI) {
+            error_rad -= 2.0 * Math.PI;
+        }
+        while (error_rad < -Math.PI) {
+            error_rad += 2.0 * Math.PI;
+        }
+        double omega_radps = 0.0;
+        if (Math.abs(error_rad) > Math.toRadians(AIM_DEADBAND_deg)) {
+            TrapezoidProfile.State goalState =
+                    new TrapezoidProfile.State(actual_rad + error_rad, 0.0);
+            aimSetpointState = aimProfile.calculate(
+                    Constants.globalDelta_s, aimSetpointState, goalState);
+            omega_radps = MathUtil.clamp(
+                    AIM_HEADING_KP * (aimSetpointState.position - actual_rad)
+                            + aimSetpointState.velocity,
+                    -MAX_ANGULAR_VEL_radps, MAX_ANGULAR_VEL_radps);
+        } else {
+            aimSetpointState = new TrapezoidProfile.State(actual_rad, 0.0);
+        }
+        return new ChassisSpeeds(
+                driverSpeeds.vxMetersPerSecond, driverSpeeds.vyMetersPerSecond, omega_radps);
+    }
+
+    public boolean isAimingDone(double tol) {
+        double error_rad = aimTargetHeading_rad - getRotation().getRadians();
+        while (error_rad > Math.PI) {
+            error_rad -= 2.0 * Math.PI;
+        }
+        while (error_rad < -Math.PI) {
+            error_rad += 2.0 * Math.PI;
+        }
+        return Math.abs(error_rad) < tol;
+    }
+
     public void resetGyroAndPose(double gyroAngle, Pose2d currentPose) {
         clearMotionState();
         double adjustedAngle = adjustForAlliance(gyroAngle);
@@ -657,6 +826,7 @@ public class Drive extends SubsystemBase<PathingMode> {
 
     /** Clears any in-flight chassis command before establishing a new autonomous pose. */
     private void clearMotionState() {
+        collision.reset();
         inputSpeeds = new ChassisSpeeds();
         outputSpeeds = new ChassisSpeeds();
         acc = new ChassisSpeeds();
@@ -665,13 +835,26 @@ public class Drive extends SubsystemBase<PathingMode> {
         poseFollower.reset();
         setCommand(PathingMode.DISABLED);
     }
-
     public void zeroGyro(double deg) {
+        collision.reset();
         double adjustedAngle = adjustForAlliance(deg);
 
         gyro.zero(adjustedAngle);
         rawGyroRotation = Rotation2d.fromDegrees(adjustedAngle);
         poseEstimator.resetPosition(rawGyroRotation, getModulePositions(), new Pose2d(getPose().getX(), getPose().getY(), rawGyroRotation));
+    }
+
+    public void setBrakeMode(boolean brake) {
+        for (var module : modules) {
+            module.setBrakeMode(brake);
+        }
+    }
+
+    public void setDriveCurrentFactor(
+            double driveFactor, double steerFactor, double driveSupplyLimit_A) {
+        for (var module : modules) {
+            module.setCurrentLimitFactor(driveFactor, steerFactor, driveSupplyLimit_A);
+        }
     }
 
     private double adjustForAlliance(double angleDeg) {

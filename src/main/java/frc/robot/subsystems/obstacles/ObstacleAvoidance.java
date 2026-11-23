@@ -244,16 +244,16 @@ public class ObstacleAvoidance extends SubsystemBase<ObstacleAvoidance.Command> 
 
   // inputPeriodic: read sensors / hardware here. We have none, so it's empty.
   @Override
-  protected void inputPeriodic() {}
+  public void inputPeriodic() {}
 
   // handle: run the state machine / do the work here. Our work happens inside constrain() (called by
   // Drive), so there's nothing to do each loop.
   @Override
-  protected void handle() {}
+  public void handle() {}
 
   // outputPeriodic: send outputs and log here. We just publish the shapes for AdvantageScope.
   @Override
-  protected void outputPeriodic() {
+  public void outputPeriodic() {
     // Turn every polygon into a list of poses that trace its outline, for the field view.
     List<Pose2d> outline = new ArrayList<>();
     for (List<Translation2d> poly : polygons) {
@@ -261,7 +261,7 @@ public class ObstacleAvoidance extends SubsystemBase<ObstacleAvoidance.Command> 
         outline.add(new Pose2d(poly.get(i % poly.size()), new Rotation2d()));
       }
     }
-    Logger.recordOutput("Obstacles/Outline", outline.toArray(new Pose2d[0]));
-    Logger.recordOutput("Obstacles/Count", polygons.size());
+    Logger.recordOutput(scope() + "/Outline", outline.toArray(new Pose2d[0]));
+    Logger.recordOutput(scope() + "/Count", polygons.size());
   }
 }

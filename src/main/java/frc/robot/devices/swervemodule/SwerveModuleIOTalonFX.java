@@ -18,6 +18,7 @@ import static frc.robot.util.PhoenixUtil.*;
 import com.ctre.phoenix6.BaseStatusSignal;
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.CANcoderConfiguration;
+import com.ctre.phoenix6.configs.CurrentLimitsConfigs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.PositionTorqueCurrentFOC;
 import com.ctre.phoenix6.controls.PositionVoltage;
@@ -97,6 +98,10 @@ public class SwerveModuleIOTalonFX implements SwerveModuleIO {
   private final Debouncer turnConnectedDebounce = new Debouncer(0.5);
   private final Debouncer turnEncoderConnectedDebounce = new Debouncer(0.5);
 
+  // Captured at construction so low-power changes never need a blocking config refresh.
+  private final CurrentLimitsConfigs baselineDriveLimits;
+  private final CurrentLimitsConfigs baselineTurnLimits;
+
   public SwerveModuleIOTalonFX(
       SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration>
           constants) {
@@ -112,13 +117,16 @@ public class SwerveModuleIOTalonFX implements SwerveModuleIO {
     driveConfig.Feedback.SensorToMechanismRatio = constants.DriveMotorGearRatio;
     driveConfig.TorqueCurrent.PeakForwardTorqueCurrent = constants.SlipCurrent;
     driveConfig.TorqueCurrent.PeakReverseTorqueCurrent = -constants.SlipCurrent;
-    driveConfig.CurrentLimits.StatorCurrentLimit = constants.SlipCurrent;
+    driveConfig.CurrentLimits.StatorCurrentLimit = 120;
     driveConfig.CurrentLimits.StatorCurrentLimitEnable = true;
+    driveConfig.CurrentLimits.SupplyCurrentLimit = 40.0;
+    driveConfig.CurrentLimits.SupplyCurrentLimitEnable = true;
     driveConfig.MotorOutput.Inverted =
         constants.DriveMotorInverted
             ? InvertedValue.Clockwise_Positive
             : InvertedValue.CounterClockwise_Positive;
     tryUntilOk(5, () -> driveTalon.getConfigurator().apply(driveConfig, 0.25));
+    baselineDriveLimits = copyLimits(driveConfig.CurrentLimits);
     tryUntilOk(5, () -> driveTalon.setPosition(0.0, 0.25));
 
     // Configure turn motor
@@ -126,26 +134,37 @@ public class SwerveModuleIOTalonFX implements SwerveModuleIO {
     turnConfig.MotorOutput.NeutralMode = NeutralModeValue.Brake;
     turnConfig.Slot0 = constants.SteerMotorGains;
     turnConfig.Feedback.FeedbackRemoteSensorID = constants.EncoderId;
-    turnConfig.Feedback.FeedbackSensorSource =
-        switch (constants.FeedbackSource) {
-          case RemoteCANcoder -> FeedbackSensorSourceValue.RemoteCANcoder;
-          case FusedCANcoder -> FeedbackSensorSourceValue.FusedCANcoder;
-          case SyncCANcoder -> FeedbackSensorSourceValue.SyncCANcoder;
-          default -> throw new RuntimeException(
-              "You are using an unsupported swerve configuration, which this template does not support without manual customization. The 2026 release of Phoenix supports some swerve configurations which were not available during 2026 beta testing, preventing any development and support from the AdvantageKit developers.");
-        };
+    switch (constants.FeedbackSource) {
+      case RemoteCANcoder:
+        turnConfig.Feedback.FeedbackSensorSource = FeedbackSensorSourceValue.RemoteCANcoder;
+        break;
+      case FusedCANcoder:
+        turnConfig.Feedback.FeedbackSensorSource = FeedbackSensorSourceValue.FusedCANcoder;
+        break;
+      case SyncCANcoder:
+        turnConfig.Feedback.FeedbackSensorSource = FeedbackSensorSourceValue.SyncCANcoder;
+        break;
+      default:
+        throw new RuntimeException(
+            "You are using an unsupported swerve configuration, which this template does not support without manual customization. The 2026 release of Phoenix supports some swerve configurations which were not available during 2026 beta testing, preventing any development and support from the AdvantageKit developers.");
+    }
     turnConfig.Feedback.RotorToSensorRatio = constants.SteerMotorGearRatio;
     turnConfig.MotionMagic.MotionMagicCruiseVelocity = 100.0 / constants.SteerMotorGearRatio;
     turnConfig.MotionMagic.MotionMagicAcceleration =
-        turnConfig.MotionMagic.MotionMagicCruiseVelocity / 0.100;
+        turnConfig.MotionMagic.MotionMagicCruiseVelocity / 0.250;
     turnConfig.MotionMagic.MotionMagicExpo_kV = 0.12 * constants.SteerMotorGearRatio;
     turnConfig.MotionMagic.MotionMagicExpo_kA = 0.1;
     turnConfig.ClosedLoopGeneral.ContinuousWrap = true;
+    turnConfig.CurrentLimits.SupplyCurrentLimit = 40.0;
+    turnConfig.CurrentLimits.SupplyCurrentLimitEnable = true;
+    turnConfig.CurrentLimits.StatorCurrentLimit = 120.0;
+    turnConfig.CurrentLimits.StatorCurrentLimitEnable = true;
     turnConfig.MotorOutput.Inverted =
         constants.SteerMotorInverted
             ? InvertedValue.Clockwise_Positive
             : InvertedValue.CounterClockwise_Positive;
     tryUntilOk(5, () -> turnTalon.getConfigurator().apply(turnConfig, 0.25));
+    baselineTurnLimits = copyLimits(turnConfig.CurrentLimits);
 
     // Configure CANCoder
     CANcoderConfiguration cancoderConfig = constants.EncoderInitialConfigs;
@@ -233,45 +252,84 @@ public class SwerveModuleIOTalonFX implements SwerveModuleIO {
 
   @Override
   public void setDriveOpenLoop(double output) {
-    driveTalon.setControl(
-        switch (constants.DriveMotorClosedLoopOutput) {
-          case Voltage -> voltageRequest.withOutput(output);
-          case TorqueCurrentFOC -> torqueCurrentRequest.withOutput(output);
-        });
+    switch (constants.DriveMotorClosedLoopOutput) {
+      case Voltage:
+        driveTalon.setControl(voltageRequest.withOutput(output));
+        break;
+      case TorqueCurrentFOC:
+        driveTalon.setControl(torqueCurrentRequest.withOutput(output));
+        break;
+    }
   }
 
   @Override
   public void setTurnOpenLoop(double output) {
-    turnTalon.setControl(
-        switch (constants.SteerMotorClosedLoopOutput) {
-          case Voltage -> voltageRequest.withOutput(output);
-          case TorqueCurrentFOC -> torqueCurrentRequest.withOutput(output);
-        });
+    switch (constants.SteerMotorClosedLoopOutput) {
+      case Voltage:
+        turnTalon.setControl(voltageRequest.withOutput(output));
+        break;
+      case TorqueCurrentFOC:
+        turnTalon.setControl(torqueCurrentRequest.withOutput(output));
+        break;
+    }
   }
 
   @Override
   public void setDriveVelocity(double velocityRadPerSec) {
     double velocityRotPerSec = Units.radiansToRotations(velocityRadPerSec);
-    driveTalon.setControl(
-        switch (constants.DriveMotorClosedLoopOutput) {
-          case Voltage -> velocityVoltageRequest.withVelocity(velocityRotPerSec);
-          case TorqueCurrentFOC -> velocityTorqueCurrentRequest.withVelocity(velocityRotPerSec);
-        });
+    switch (constants.DriveMotorClosedLoopOutput) {
+      case Voltage:
+        driveTalon.setControl(velocityVoltageRequest.withVelocity(velocityRotPerSec));
+        break;
+      case TorqueCurrentFOC:
+        driveTalon.setControl(velocityTorqueCurrentRequest.withVelocity(velocityRotPerSec));
+        break;
+    }
   }
 
   @Override
   public void setTurnPosition(Rotation2d rotation) {
-    turnTalon.setControl(
-        switch (constants.SteerMotorClosedLoopOutput) {
-          case Voltage -> positionVoltageRequest.withPosition(rotation.getRotations());
-          case TorqueCurrentFOC -> positionTorqueCurrentRequest.withPosition(
-              rotation.getRotations());
-        });
+    switch (constants.SteerMotorClosedLoopOutput) {
+      case Voltage:
+        turnTalon.setControl(positionVoltageRequest.withPosition(rotation.getRotations()));
+        break;
+      case TorqueCurrentFOC:
+        turnTalon.setControl(
+            positionTorqueCurrentRequest.withPosition(rotation.getRotations()));
+        break;
+    }
   }
 
   @Override
   public void setBrake(boolean brake) {
     driveTalon.setNeutralMode(brake ? NeutralModeValue.Brake : NeutralModeValue.Coast);
     turnTalon.setNeutralMode(brake ? NeutralModeValue.Brake : NeutralModeValue.Coast);
+  }
+
+  @Override
+  public void setCurrentLimitFactor(
+      double driveFactor, double steerFactor, double driveSupplyLimit_A) {
+    applyCurrentLimitFactor(driveTalon, baselineDriveLimits, driveFactor, driveSupplyLimit_A);
+    applyCurrentLimitFactor(
+        turnTalon, baselineTurnLimits, steerFactor, baselineTurnLimits.SupplyCurrentLimit);
+  }
+
+  private void applyCurrentLimitFactor(
+      TalonFX talon, CurrentLimitsConfigs baseline, double factor, double supplyLimit_A) {
+    var limits = copyLimits(baseline)
+        .withSupplyCurrentLimit(supplyLimit_A * factor)
+        .withStatorCurrentLimit(baseline.StatorCurrentLimit * factor);
+    // Timeout 0 = fire and forget. This runs mid-brownout, so it must not block the loop.
+    talon.getConfigurator().apply(limits, 0.0);
+  }
+
+  private static CurrentLimitsConfigs copyLimits(CurrentLimitsConfigs src) {
+    return new CurrentLimitsConfigs()
+        .withSupplyCurrentLimit(src.SupplyCurrentLimit)
+        .withSupplyCurrentLimitEnable(src.SupplyCurrentLimitEnable)
+        .withSupplyCurrentLowerLimit(src.SupplyCurrentLowerLimit)
+        .withSupplyCurrentLowerTime(src.SupplyCurrentLowerTime)
+        .withStatorCurrentLimit(src.StatorCurrentLimit)
+        .withStatorCurrentLimitEnable(src.StatorCurrentLimitEnable);
   }
 }

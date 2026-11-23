@@ -35,12 +35,18 @@ public class MotorConfig {
 
         /** Number of configured units in one mechanism rotation. */
         public double unitsPerRotation() {
-            return switch (this) {
-                case DEGREES -> 360.0;
-                case RADIANS -> 2.0 * Math.PI;
-                // Linear mechanism units are calibrated by sensorToMechanismRatio.
-                case METERS, ROTATIONS, NONE -> 1.0;
-            };
+            switch (this) {
+                case DEGREES:
+                    return 360.0;
+                case RADIANS:
+                    return 2.0 * Math.PI;
+                case METERS:
+                case ROTATIONS:
+                case NONE:
+                default:
+                    // Linear mechanism units are calibrated by sensorToMechanismRatio.
+                    return 1.0;
+            }
         }
 
         public double fromMechanismRotations(double rotations) {

@@ -4,5 +4,6 @@ package frc.robot.subsystems.drive;
 public enum PathingMode {
     DISABLED,
     FIELD_RELATIVE,
-    POSE_FOLLOWING
+    POSE_FOLLOW,
+    XLOCK
 }

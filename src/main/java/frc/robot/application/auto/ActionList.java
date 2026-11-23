@@ -48,6 +48,7 @@ public class ActionList {
     private final PathingStyle pathingStyle;
     private final ArrayList<Action> actions = new ArrayList<>();
     private int index = 0;
+    private boolean flippedToRed = false;
 
     public ActionList(String name, StartLocation startLocation) {
         this(name, startLocation, PathingStyle.PRECISE);
@@ -111,7 +112,19 @@ public class ActionList {
         }
     }
 
+    public boolean isFlippedToRed() {
+        return flippedToRed;
+    }
+
+    public void setFlippedToRed(boolean flippedToRed) {
+        this.flippedToRed = flippedToRed;
+    }
+
     public Action currentAction() { return index < actions.size() ? actions.get(index) : null; }
+    public Action peekNext() {
+        int nextIndex = index + 1;
+        return nextIndex < actions.size() ? actions.get(nextIndex) : null;
+    }
     public void pass() { index++; }
     public int getIndex() { return index; }
     public int size() { return actions.size(); }
@@ -122,10 +135,15 @@ public class ActionList {
     }
     public Pose2d startPose() {
         if (explicitStartPose != null) return explicitStartPose;
-        return switch (startLocation) {
-            case LEFT -> PoseBank.LEFT;
-            case CENTER -> PoseBank.CENTER;
-            case RIGHT -> PoseBank.RIGHT;
-        };
+        switch (startLocation) {
+            case LEFT:
+                return PoseBank.LEFT;
+            case CENTER:
+                return PoseBank.CENTER;
+            case RIGHT:
+                return PoseBank.RIGHT;
+            default:
+                return PoseBank.CENTER;
+        }
     }
 }

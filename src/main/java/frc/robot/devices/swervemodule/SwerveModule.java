@@ -41,6 +41,7 @@ public class SwerveModule {
 
     private final SwerveModuleIO io;
     private final SwerveModuleIOInputsAutoLogged inputs = new SwerveModuleIOInputsAutoLogged();
+    private final String scope;
     private final int index;
 
     private final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants;
@@ -53,15 +54,22 @@ public class SwerveModule {
     private final Alert turnEncoderDisconnectedAlert;
     private SwerveModulePosition[] odometryPositions = new SwerveModulePosition[] {};
 
-    public SwerveModule(int index,
+    public SwerveModule(String scope, int index,
             SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> constants) {
+        this.scope = scope;
         this.index = index;
         this.constants = constants;
-        this.io = switch (Constants.currentMode) {
-            case REAL -> new SwerveModuleIOTalonFX(constants);
-            case SIM -> new SwerveModuleIOSim(constants);
-            default -> new SwerveModuleIO() {}; // REPLAY: blank IO, inputs replayed from log
-        };
+        switch (Constants.currentMode) {
+            case REAL:
+                this.io = new SwerveModuleIOTalonFX(constants);
+                break;
+            case SIM:
+                this.io = new SwerveModuleIOSim(constants);
+                break;
+            default:
+                this.io = new SwerveModuleIO() {}; // REPLAY: blank IO, inputs replayed from log
+                break;
+        }
 
         setBrakeMode(true);
 
@@ -85,7 +93,7 @@ public class SwerveModule {
     }
 
     public void inputPeriodic() {
-        Logger.processInputs("Drive/Module" + Integer.toString(index), inputs);
+        Logger.processInputs(scope + "/Module" + Integer.toString(index), inputs);
 
         // Calculate positions for odometry
         int sampleCount = inputs.odometryTimestamps_s.length; // All signals are sampled together
@@ -152,6 +160,11 @@ public class SwerveModule {
     /** Sets whether brake mode is enabled. */
     public void setBrakeMode(boolean enabled) {
         io.setBrake(enabled);
+    }
+
+    public void setCurrentLimitFactor(
+            double driveFactor, double steerFactor, double driveSupplyLimit_A) {
+        io.setCurrentLimitFactor(driveFactor, steerFactor, driveSupplyLimit_A);
     }
 
     /** Returns the current turn angle of the module. */

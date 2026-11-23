@@ -23,6 +23,8 @@ public class Motor {
     }
 
     private final String name;
+    private final String subsystemName;
+
     private final MotorIO io;
     private final MotorIOInputsAutoLogged inputs = new MotorIOInputsAutoLogged();
     private final MotorConfig.MeasurementUnit measurementUnit;
@@ -30,9 +32,11 @@ public class Motor {
     private ControlType control = ControlType.STOP;
     private double target = 0.0;
 
-    public Motor(String name, MotorConfig config, Mode mode) {
+    public Motor(String name, String subsystemName, MotorConfig config, Mode mode) {
         this.name = name;
+        this.subsystemName = subsystemName;
         this.measurementUnit = config.measurementUnit;
+
         if (mode == Mode.REAL) {
             this.io = new MotorIOTalonFX(config);
         } else {
@@ -40,8 +44,8 @@ public class Motor {
         }
     }
 
-    public Motor(String name, MotorConfig config) {
-        this(name, config, Constants.currentMode == Constants.Mode.REAL ? Mode.REAL : Mode.SIM);
+    public Motor(String name, String subsystemName, MotorConfig config) {
+        this(name, subsystemName, config, Constants.currentMode == Constants.Mode.REAL ? Mode.REAL : Mode.SIM);
     }
 
     public void readInputs() {
@@ -49,24 +53,25 @@ public class Motor {
         inputs.position = measurementUnit.fromMechanismRotations(inputs.position);
         inputs.velocity = measurementUnit.fromMechanismRotations(inputs.velocity);
         inputs.acceleration = measurementUnit.fromMechanismRotations(inputs.acceleration);
-        Logger.processInputs(name, inputs);
-        Logger.recordOutput(name + "/MeasurementUnit", measurementUnit.name());
+        Logger.processInputs(subsystemName + "/" + name, inputs);
+        Logger.recordOutput(subsystemName + "/" + name + "/MeasurementUnit", measurementUnit.name());
 
         if (measurementUnit != MotorConfig.MeasurementUnit.NONE) {
-            Logger.recordOutput(name + "/Position" + measurementUnit.positionSuffix, inputs.position);
-            Logger.recordOutput(name + "/Velocity" + measurementUnit.velocitySuffix, inputs.velocity);
-            Logger.recordOutput(name + "/Acceleration" + measurementUnit.accelerationSuffix, inputs.acceleration);
+            Logger.recordOutput(subsystemName + "/" + name + "/Position" + measurementUnit.positionSuffix, inputs.position);
+            Logger.recordOutput(subsystemName + "/" + name + "/Velocity" + measurementUnit.velocitySuffix, inputs.velocity);
+            Logger.recordOutput(subsystemName + "/" + name + "/Acceleration" + measurementUnit.accelerationSuffix, inputs.acceleration);
         }
     }
 
     private void setOutput(ControlType control, double target) {
         this.control = control;
         this.target = target;
-        Logger.recordOutput(name + "/ControlType", control);
-        Logger.recordOutput(name + "/TargetSetpoint", target);
+        Logger.recordOutput(subsystemName + "/" + name + "/ControlType", control);
+        Logger.recordOutput(subsystemName + "/" + name + "/TargetSetpoint", target);
     }
 
     public void setVoltage(double volts) {
+        // System.out.println("Volts: " + volts);
         volts = MathUtil.clamp(volts, -12, 12);
         setOutput(ControlType.VOLTAGE, volts);
         io.setVoltage(volts);
@@ -95,6 +100,21 @@ public class Motor {
     public void setMotionMagicVelocity(double velocity) {
         setOutput(ControlType.MOTION_MAGIC_VELOCITY, velocity);
         io.setMotionMagicVelocity(measurementUnit.toMechanismRotations(velocity));
+    }
+
+    /** Motion Magic velocity with a per-request acceleration; 0 uses the configured value. */
+    public void setMotionMagicVelocity(double velocity, double acceleration) {
+        setOutput(ControlType.MOTION_MAGIC_VELOCITY, velocity);
+        io.setMotionMagicVelocity(measurementUnit.toMechanismRotations(velocity),
+                measurementUnit.toMechanismRotations(acceleration));
+    }
+
+    /** Motion Magic velocity with an extra voltage feedforward added to the closed-loop output. */
+    public void setMotionMagicVelocity(double velocity, double acceleration,
+            double feedForwardVolts) {
+        setOutput(ControlType.MOTION_MAGIC_VELOCITY, velocity);
+        io.setMotionMagicVelocity(measurementUnit.toMechanismRotations(velocity),
+                measurementUnit.toMechanismRotations(acceleration), feedForwardVolts);
     }
 
     public void stop() {
@@ -128,6 +148,11 @@ public class Motor {
 
     public double getCurrent() {
         return inputs.statorCurrent;
+    }
+
+    /** True when stator current meets the spike threshold (e.g. hardstop stall during homing). */
+    public boolean getCurrentSpike(double threshold_A) {
+        return inputs.statorCurrent >= threshold_A;
     }
 
     public boolean isConnected() {

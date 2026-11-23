@@ -68,7 +68,7 @@ public class Tracking extends SubsystemBase<TrackingStates> {
     // Build the tracking camera: NT name "limelight-mvrt", mounted 0.2m fwd / 0.3m up / tilted up
     // 15deg, and (in sim) can only see STANDOFF... SIM_MAX_SIGHT_RANGE_m far.
     this.limelight = new Limelight(
-        "Tracking/Limelight",
+        scope() + "/Limelight",
         new LimelightConfig("limelight-mvrt")
             .withRobotToCamera(CAMERA_X_m, CAMERA_Y_m, CAMERA_Z_m, CAMERA_ROLL_deg,
                 CAMERA_PITCH_deg, CAMERA_YAW_deg)
@@ -151,7 +151,7 @@ public class Tracking extends SubsystemBase<TrackingStates> {
   // Lifecycle step 2: the state machine. getCommand() is the current state; setCommand(...) changes
   // it. firstLoop() is true only on the first loop after entering a state (good for one-time setup).
   @Override
-  protected void handle() {
+  public void handle() {
     switch (getCommand()) {
 
       case DISABLED:
@@ -160,10 +160,10 @@ public class Tracking extends SubsystemBase<TrackingStates> {
 
       case IDLE:
         if (!enabled) setCommand(TrackingStates.DISABLED);
-        else if (drive.isTrackingRequested()) setCommand(TrackingStates.TRACKING);
+        else if (drive.isTrackingRequested()) setCommand(TrackingStates.TRACK);
         break;
 
-      case TRACKING:
+      case TRACK:
         if (!enabled) {
           setCommand(TrackingStates.DISABLED);
         } else if (!drive.isTrackingRequested()) {
@@ -180,23 +180,23 @@ public class Tracking extends SubsystemBase<TrackingStates> {
   // Lifecycle step 3: publish everything to the log so you can see it in AdvantageScope.
   @Override
   public void outputPeriodic() {
-    Logger.recordOutput("Tracking/Enabled", enabled);
-    Logger.recordOutput("Tracking/State", getCommand().toString());
-    Logger.recordOutput("Tracking/TxTarget", currTxTarget);
-    Logger.recordOutput("Tracking/TzTarget", currTzTarget);
+    Logger.recordOutput(scope() + "/Enabled", enabled);
+    Logger.recordOutput(scope() + "/State", getCommand().toString());
+    Logger.recordOutput(scope() + "/TxTarget", currTxTarget);
+    Logger.recordOutput(scope() + "/TzTarget", currTzTarget);
 
     int tagId = getTargetTag();
     OptionalDouble targetAngle = TagAngles.getTargetAngle(tagId);
-    Logger.recordOutput("Tracking/HasTarget", hasTarget());
-    Logger.recordOutput("Tracking/TargetTagId", tagId);          // the tag we chose.
-    Logger.recordOutput("Tracking/PrimaryTagId", getPrimaryTagId()); // what the camera thinks is best.
-    Logger.recordOutput("Tracking/TargetAngle_deg", targetAngle.orElse(Double.NaN));
+    Logger.recordOutput(scope() + "/HasTarget", hasTarget());
+    Logger.recordOutput(scope() + "/TargetTagId", tagId);          // the tag we chose.
+    Logger.recordOutput(scope() + "/PrimaryTagId", getPrimaryTagId()); // what the camera thinks is best.
+    Logger.recordOutput(scope() + "/TargetAngle_deg", targetAngle.orElse(Double.NaN));
 
     // The chosen tag's field pose, as a 0- or 1-length array (drop on the 3D field to see it).
     Pose3d[] targetTagPose = tagLayout.getTagPose(tagId)
         .map(pose -> new Pose3d[] {pose})
         .orElse(new Pose3d[0]);
-    Logger.recordOutput("Tracking/TargetTagPose", targetTagPose);
+    Logger.recordOutput(scope() + "/TargetTagPose", targetTagPose);
 
     // Draw a line from the camera to every tag it currently sees (camera -> tag, camera -> tag, ...).
     Pose3d cameraPose = new Pose3d(drive.getPose()).transformBy(limelight.getRobotToCamera());
@@ -207,7 +207,7 @@ public class Tracking extends SubsystemBase<TrackingStates> {
         sightline.add(pose);
       });
     }
-    Logger.recordOutput("Tracking/Sightline", sightline.toArray(new Pose3d[0]));
+    Logger.recordOutput(scope() + "/Sightline", sightline.toArray(new Pose3d[0]));
   }
 
   // ============================================================================================

@@ -1,0 +1,7 @@
+All motorsystem names have the type of motorsystem followed by _number of motors in the system. 
+All measurements have the thing followed by _units
+All command names must be commands
+When setting velocity use motionmagicvelocity
+Never use lambdas for switches, always use case and break
+When extending and overriding functions use public not protected
+All subsystem output automatically logs under Subsystems

@@ -35,6 +35,8 @@ public final class Constants {
     // Match the reference frc2k26 project: default to red until DriverStation reports alliance.
     private static boolean isRed = true;
 
+    public static String CANivore = "MVRT-CAN";
+
     public static final double FIELD_LENGTH_M = 16.540988;//Units.inchesToMeters(651.22); // 16.540988
     public static final double FIELD_WIDTH_M = 8.069326; //Units.inchesToMeters(317.69);//8.069326;
 
@@ -53,13 +55,10 @@ public final class Constants {
     public static final boolean verboseLogging = true;
 
     public enum Mode {
-        /** Running on a real robot. */
         REAL,
 
-        /** Running a physics simulator. */
         SIM,
 
-        /** Replaying from a log file. */
         REPLAY
     }
 }

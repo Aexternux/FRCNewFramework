@@ -1653,7 +1653,7 @@ public class LimelightHelpers {
         try {
             results = mapper.readValue(getJSONDump(limelightName), LimelightResults.class);
         } catch (JsonProcessingException e) {
-            results.error = "lljson error: " + e.getMessage();
+            return null;
         }
 
         long end = System.nanoTime();

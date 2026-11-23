@@ -21,6 +21,7 @@ public class MotorIOSim implements MotorIO {
     private Mode mode = Mode.NEUTRAL;
     private double setpoint = 0.0;
     private double appliedVolts = 0.0;
+    private double feedForwardVolts = 0.0;
 
     public MotorIOSim(MotorConfig config) {
         this.config = config;
@@ -31,12 +32,24 @@ public class MotorIOSim implements MotorIO {
 
     @Override
     public void updateInputs(MotorIOInputs inputs) {
-        double pos = getSensorPositionRotations();
-        double vel = getSensorVelocityRotationsPerSecond();
+        if (mode == Mode.VELOCITY) {
+            // Ideal velocity source: ignore PID entirely and hold the target velocity.
+            // (Matches TalonFX feedback convention: rotor rotations / SensorToMechanismRatio.)
+            double targetRadPerSec = setpoint * config.sensorToMechanismRatio / config.simGearing
+                    * 2.0 * Math.PI;
+            double newPosRad =
+                    sim.getAngularPositionRad() + targetRadPerSec * Constants.globalDelta_s;
+            sim.setState(newPosRad, targetRadPerSec);
+            appliedVolts = feedForwardVolts;
+            sim.setInputVoltage(0.0);
+        } else {
+            double pos = getSensorPositionRotations();
+            double vel = getSensorVelocityRotationsPerSecond();
 
-        appliedVolts = MathUtil.clamp(computeVolts(pos, vel), -12.0, 12.0);
-        sim.setInputVoltage(appliedVolts);
-        sim.update(Constants.globalDelta_s);
+            appliedVolts = MathUtil.clamp(computeVolts(pos, vel), -12.0, 12.0);
+            sim.setInputVoltage(appliedVolts);
+            sim.update(Constants.globalDelta_s);
+        }
 
         inputs.connected = true;
         inputs.position = getSensorPositionRotations();
@@ -60,13 +73,6 @@ public class MotorIOSim implements MotorIO {
                         + config.kP * error
                         - config.kD * vel
                         + Math.signum(error) * config.kS;
-            }
-            case VELOCITY: {
-                double error = setpoint - vel;
-                return gravityFeedforward()
-                        + config.kV * setpoint
-                        + 0.5 * error
-                        + Math.signum(setpoint) * config.kS;
             }
             case NEUTRAL:
                 return 0.0;
@@ -127,6 +133,15 @@ public class MotorIOSim implements MotorIO {
     public void setMotionMagicVelocity(double velocity) {
         mode = Mode.VELOCITY;
         setpoint = velocity;
+        feedForwardVolts = 0.0;
+    }
+
+    @Override
+    public void setMotionMagicVelocity(double velocity, double acceleration,
+            double feedForwardVolts) {
+        mode = Mode.VELOCITY;
+        setpoint = velocity;
+        this.feedForwardVolts = feedForwardVolts;
     }
 
     @Override

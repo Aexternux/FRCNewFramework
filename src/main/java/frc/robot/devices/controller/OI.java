@@ -8,7 +8,7 @@ public class OI extends XboxController {
     static {
         DR = new OI(0);
         XK = new XK80(1);
-        DEADBAND_RADIUS = 0.01;
+        DEADBAND_RADIUS = 0.08;
     }
 
     public static final OI DR;

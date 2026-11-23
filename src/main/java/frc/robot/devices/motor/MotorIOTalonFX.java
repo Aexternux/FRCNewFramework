@@ -174,7 +174,22 @@ public class MotorIOTalonFX implements MotorIO {
 
     @Override
     public void setMotionMagicVelocity(double velocity) {
-        talon.setControl(motionMagicVelocityControl.withVelocity(velocity));
+        setMotionMagicVelocity(velocity, 0.0);
+    }
+
+    @Override
+    public void setMotionMagicVelocity(double velocity, double acceleration) {
+        // Acceleration 0 tells Phoenix to use the configured Motion Magic acceleration.
+        talon.setControl(motionMagicVelocityControl.withVelocity(velocity)
+                .withAcceleration(acceleration));
+    }
+
+    @Override
+    public void setMotionMagicVelocity(double velocity, double acceleration,
+            double feedForwardVolts) {
+        talon.setControl(motionMagicVelocityControl.withVelocity(velocity)
+                .withAcceleration(acceleration)
+                .withFeedForward(feedForwardVolts));
     }
 
     @Override

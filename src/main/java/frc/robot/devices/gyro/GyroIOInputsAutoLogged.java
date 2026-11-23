@@ -14,6 +14,9 @@ public class GyroIOInputsAutoLogged extends GyroIO.GyroIOInputs implements Logga
     table.put("Pitch_Rot2d", pitch_Rot2d);
     table.put("Roll_Rot2d", roll_Rot2d);
     table.put("YawVel_radps", yawVel_radps);
+    table.put("AccelX_mps2", accelX_mps2);
+    table.put("AccelY_mps2", accelY_mps2);
+    table.put("RebootedWhileEnabled", rebootedWhileEnabled);
     table.put("OdometryYawTimestamps", odometryYawTimestamps);
     table.put("OdometryYawPositions", odometryYawPositions);
   }
@@ -25,6 +28,9 @@ public class GyroIOInputsAutoLogged extends GyroIO.GyroIOInputs implements Logga
     pitch_Rot2d = table.get("Pitch_Rot2d", pitch_Rot2d);
     roll_Rot2d = table.get("Roll_Rot2d", roll_Rot2d);
     yawVel_radps = table.get("YawVel_radps", yawVel_radps);
+    accelX_mps2 = table.get("AccelX_mps2", accelX_mps2);
+    accelY_mps2 = table.get("AccelY_mps2", accelY_mps2);
+    rebootedWhileEnabled = table.get("RebootedWhileEnabled", rebootedWhileEnabled);
     odometryYawTimestamps = table.get("OdometryYawTimestamps", odometryYawTimestamps);
     odometryYawPositions = table.get("OdometryYawPositions", odometryYawPositions);
   }
@@ -36,6 +42,9 @@ public class GyroIOInputsAutoLogged extends GyroIO.GyroIOInputs implements Logga
     copy.pitch_Rot2d = this.pitch_Rot2d;
     copy.roll_Rot2d = this.roll_Rot2d;
     copy.yawVel_radps = this.yawVel_radps;
+    copy.accelX_mps2 = this.accelX_mps2;
+    copy.accelY_mps2 = this.accelY_mps2;
+    copy.rebootedWhileEnabled = this.rebootedWhileEnabled;
     copy.odometryYawTimestamps = this.odometryYawTimestamps.clone();
     copy.odometryYawPositions = this.odometryYawPositions.clone();
     return copy;

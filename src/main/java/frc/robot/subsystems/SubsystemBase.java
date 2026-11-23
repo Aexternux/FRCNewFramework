@@ -21,6 +21,11 @@ public abstract class SubsystemBase<C extends Enum<C>> {
         this.name = name;
     }
 
+    /** Log scope for this subsystem. All output nests under Subsystems/<name>/ automatically. */
+    protected final String scope() {
+        return "Subsystems/" + name;
+    }
+
     public final void setCommand(C next) {
         if (command == null || command != next) {
             command = next;
@@ -73,11 +78,11 @@ public abstract class SubsystemBase<C extends Enum<C>> {
         return substateTimer.time() >= seconds;
     }
 
-    protected abstract void inputPeriodic();
+    public abstract void inputPeriodic();
 
-    protected abstract void handle();
+    public abstract void handle();
 
-    protected abstract void outputPeriodic();
+    public abstract void outputPeriodic();
 
     public final void periodic() {
         int id = PerfTracker.start(name);
@@ -87,9 +92,9 @@ public abstract class SubsystemBase<C extends Enum<C>> {
         outputPeriodic();
         PerfTracker.end(id);
 
-        Logger.recordOutput(name + "/Command", command);
-        Logger.recordOutput(name + "/CommandTimer", commandTimer.time());
-        Logger.recordOutput(name + "/Substate", substate == null ? "NONE" : substate.name());
-        Logger.recordOutput(name + "/SubstateTimer", substateTimer.time());
+        Logger.recordOutput(scope() + "/Command", command);
+        Logger.recordOutput(scope() + "/CommandTimer", commandTimer.time());
+        Logger.recordOutput(scope() + "/Substate", substate == null ? "NONE" : substate.name());
+        Logger.recordOutput(scope() + "/SubstateTimer", substateTimer.time());
     }
 }

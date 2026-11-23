@@ -16,7 +16,6 @@ import edu.wpi.first.wpilibj.Timer;
 import frc.robot.devices.limelight.Limelight;
 import frc.robot.devices.limelight.LimelightConfig;
 import frc.robot.devices.limelight.LimelightIO.LimelightIOInputs.PoseObservation;
-import frc.robot.devices.limelight.LimelightIO.LimelightIOInputs.PoseType;
 import frc.robot.subsystems.SubsystemBase;
 import frc.robot.subsystems.drive.Drive;
 import frc.robot.subsystems.vision.VisionFusion.Measurement;
@@ -65,7 +64,7 @@ public class Vision extends SubsystemBase<Vision.Command> {
         super("Vision");
         for (VisionConstants.CameraConfig camera : VisionConstants.CAMERAS) {
             limelights.add(new Limelight(
-                    "Vision/" + camera.name(),
+                    scope() + "/" + camera.name(),
                     new LimelightConfig(camera.name())
                             .withRobotToCamera(camera.robotToCamera())
                             .withMaxSightRange(VisionConstants.SIM_MAX_SIGHT_RANGE_m)));
@@ -75,7 +74,7 @@ public class Vision extends SubsystemBase<Vision.Command> {
     }
 
     @Override
-    protected void inputPeriodic() {
+    public void inputPeriodic() {
         for (Limelight limelight : limelights) {
             limelight.setRobotOrientation(drive.getRotation());
             limelight.updateSimPose(drive.getPose());
@@ -84,7 +83,7 @@ public class Vision extends SubsystemBase<Vision.Command> {
     }
 
     @Override
-    protected void handle() {
+    public void handle() {
         fusedPose = null;
         filteredPose = null;
         acceptedThisCycle = 0;
@@ -104,7 +103,6 @@ public class Vision extends SubsystemBase<Vision.Command> {
             double stdX = Math.sqrt(fused.varX());
             double stdY = Math.sqrt(fused.varY());
             double stdTheta = Math.sqrt(fused.varTheta());
-
             // Layer 2 is vision-only. It may reject or de-weight a dubious camera measurement,
             // but it never creates a second drivetrain pose estimate.
             GateResult gate = filter.evaluateAndUpdate(
@@ -123,7 +121,15 @@ public class Vision extends SubsystemBase<Vision.Command> {
 
             // Layer 3 adapts only covariance based on recent vision consistency. It contributes
             // no pose or odometry information of its own.
+            // When still, vision noise shows up as odom jitter — trust it 3x less so wheel
+            // odom dominates and vision only fixes slow drift.
             double multiplier = gate.stdDevMultiplier() * trust.stdDevMultiplier();
+            var speeds = drive.getChassisSpeeds();
+            boolean isStill = Math.hypot(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond) < 0.2
+                    && Math.abs(speeds.omegaRadiansPerSecond) < 0.2;
+            if (isStill) {
+                multiplier *= 3.0;
+            }
             drive.addVisionMeasurement(fused.pose(), fused.timestamp(), VecBuilder.fill(
                     stdX * multiplier, stdY * multiplier, stdTheta * multiplier));
             forwardedThisCycle++;
@@ -133,19 +139,19 @@ public class Vision extends SubsystemBase<Vision.Command> {
     }
 
     @Override
-    protected void outputPeriodic() {
-        Logger.recordOutput("Vision/AcceptedObservations", acceptedThisCycle);
-        Logger.recordOutput("Vision/GateRejectedObservations", gateRejectedThisCycle);
-        Logger.recordOutput("Vision/ForwardedMeasurements", forwardedThisCycle);
-        Logger.recordOutput("Vision/Trust/StdDevMultiplier", adaptiveStdDevMultiplier);
-        Logger.recordOutput("Vision/Trust/JitterSigma", visionJitterSigma);
-        Logger.recordOutput("Vision/Trust/WarmedUp", trustWarmedUp);
-        Logger.recordOutput("Vision/HasFusedPose", fusedPose != null);
+    public void outputPeriodic() {
+        Logger.recordOutput(scope() + "/AcceptedObservations", acceptedThisCycle);
+        Logger.recordOutput(scope() + "/GateRejectedObservations", gateRejectedThisCycle);
+        Logger.recordOutput(scope() + "/ForwardedMeasurements", forwardedThisCycle);
+        Logger.recordOutput(scope() + "/Trust/StdDevMultiplier", adaptiveStdDevMultiplier);
+        Logger.recordOutput(scope() + "/Trust/JitterSigma", visionJitterSigma);
+        Logger.recordOutput(scope() + "/Trust/WarmedUp", trustWarmedUp);
+        Logger.recordOutput(scope() + "/HasFusedPose", fusedPose != null);
         if (fusedPose != null) {
-            Logger.recordOutput("Vision/FusedPose", fusedPose);
+            Logger.recordOutput(scope() + "/FusedPose", fusedPose);
         }
         if (filteredPose != null) {
-            Logger.recordOutput("Vision/FilteredPose", filteredPose);
+            Logger.recordOutput(scope() + "/FilteredPose", filteredPose);
         }
         logSightlines();
     }
@@ -174,8 +180,8 @@ public class Vision extends SubsystemBase<Vision.Command> {
             allTagPoses.addAll(tagPoses);
             allSightlines.addAll(sightlines);
         }
-        Logger.recordOutput("Vision/Summary/TagPoses", allTagPoses.toArray(new Pose3d[0]));
-        Logger.recordOutput("Vision/Summary/Sightlines", allSightlines.toArray(new Pose3d[0]));
+        Logger.recordOutput(scope() + "/Summary/TagPoses", allTagPoses.toArray(new Pose3d[0]));
+        Logger.recordOutput(scope() + "/Summary/Sightlines", allSightlines.toArray(new Pose3d[0]));
     }
 
     // ---- Layer 1: build per-limelight measurements ----
@@ -228,21 +234,32 @@ public class Vision extends SubsystemBase<Vision.Command> {
         if (observation.tagCount() == 1 && observation.ambiguity() > VisionConstants.MAX_AMBIGUITY) {
             return true;
         }
+        // Single-tag far frames are the main still-jitter source: noisy and jumpy.
+        if (observation.tagCount() == 1 && observation.avgTagDistance() > 3.5) {
+            return true;
+        }
         if (Math.abs(observation.pose().getZ()) > VisionConstants.MAX_Z_ERROR_m) {
             return true;
         }
         Pose2d pose = observation.pose().toPose2d();
-        return pose.getX() < 0.0 || pose.getY() < 0.0;
+        // Noisy near-wall estimates dip slightly outside the field; allow a margin instead
+        // of discarding legitimate camera data on a boundary technicality.
+        double margin_m = 1.0;
+        return pose.getX() < -margin_m || pose.getY() < -margin_m
+                || pose.getX() > tagLayout.getFieldLength() + margin_m
+                || pose.getY() > tagLayout.getFieldWidth() + margin_m;
     }
 
     private Measurement toMeasurement(PoseObservation observation) {
         double factor = Math.pow(observation.avgTagDistance(), 2.0)
                 / Math.max(observation.tagCount(), 1);
+        // Floor keeps close-range frames from yanking the pose (jitter); cap keeps far
+        // frames influential instead of decaying to nothing.
+        factor = Math.min(Math.max(factor, 3.0), 9.0);
 
         double linearStd = VisionConstants.LINEAR_STD_BASELINE_m * factor;
-        double rotationStd = observation.type() == PoseType.MEGATAG_2
-                ? VisionConstants.MEGATAG2_ROTATION_STD_rad
-                : VisionConstants.ANGULAR_STD_BASELINE_rad * factor;
+        // Heading is gyro-owned for every pose type: vision only corrects x/y.
+        double rotationStd = VisionConstants.VISION_ROTATION_STD_rad;
 
         return new Measurement(
                 observation.pose().toPose2d(),
@@ -275,7 +292,7 @@ public class Vision extends SubsystemBase<Vision.Command> {
         visionJitterSigma = 0.0;
         trustWarmedUp = false;
         rejectObservationsBefore_s = Timer.getFPGATimestamp();
-        Logger.recordOutput("Vision/ResetPose", pose);
+        Logger.recordOutput(scope() + "/ResetPose", pose);
     }
 
     /**

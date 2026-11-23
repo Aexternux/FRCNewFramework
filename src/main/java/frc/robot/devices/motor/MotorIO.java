@@ -30,6 +30,17 @@ public interface MotorIO {
 
     public default void setMotionMagicVelocity(double velocity) {}
 
+    /** Motion Magic velocity with a per-request acceleration; 0 uses the configured value. */
+    public default void setMotionMagicVelocity(double velocity, double acceleration) {
+        setMotionMagicVelocity(velocity);
+    }
+
+    /** Motion Magic velocity with an extra voltage feedforward added to the closed-loop output. */
+    public default void setMotionMagicVelocity(double velocity, double acceleration,
+            double feedForwardVolts) {
+        setMotionMagicVelocity(velocity, acceleration);
+    }
+
     public default void stop() {}
 
     public default void setBrakeMode(boolean brake) {}

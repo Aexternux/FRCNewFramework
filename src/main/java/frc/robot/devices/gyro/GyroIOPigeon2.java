@@ -22,6 +22,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.units.measure.Angle;
 import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.units.measure.LinearAcceleration;
 import frc.robot.constants.Constants;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.drive.Drive;
@@ -30,6 +31,8 @@ import java.util.Queue;
 
 /** Phoenix 6 Pigeon2 implementation of {@link GyroIO}. */
 public class GyroIOPigeon2 implements GyroIO {
+  private static final double STANDARD_GRAVITY_mps2 = 9.80665;
+
   private final Pigeon2 pigeon;
   private final StatusSignal<Angle> yaw;
   private final StatusSignal<Angle> pitch;
@@ -37,6 +40,9 @@ public class GyroIOPigeon2 implements GyroIO {
   private final Queue<Double> yawPositionQueue;
   private final Queue<Double> yawTimestampQueue;
   private final StatusSignal<AngularVelocity> yawVelocity;
+  private final StatusSignal<LinearAcceleration> accelX;
+  private final StatusSignal<LinearAcceleration> accelY;
+  private final StatusSignal<Boolean> stickyBootDuringEnable;
 
   public GyroIOPigeon2() {
     pigeon = new Pigeon2(
@@ -49,9 +55,18 @@ public class GyroIOPigeon2 implements GyroIO {
     pitch = pigeon.getPitch();
     roll = pigeon.getRoll();
     yawVelocity = pigeon.getAngularVelocityZWorld();
+    accelX = pigeon.getAccelerationX();
+    accelY = pigeon.getAccelerationY();
+    // Clear any reboot left over from before this code started so the flag only reflects this run.
+    pigeon.clearStickyFault_BootDuringEnable();
+    stickyBootDuringEnable = pigeon.getStickyFault_BootDuringEnable();
 
     yaw.setUpdateFrequency(Drive.ODOMETRY_FREQUENCY_Hz);
     BaseStatusSignal.setUpdateFrequencyForAll(Constants.globalDelta_Hz, pitch, roll, yawVelocity);
+    // Collision detection reads these; faster than the loop so each read is fresh.
+    BaseStatusSignal.setUpdateFrequencyForAll(Drive.ODOMETRY_FREQUENCY_Hz, accelX, accelY);
+    // Must be set before optimizeBusUtilization(), which turns off unrequested signals.
+    stickyBootDuringEnable.setUpdateFrequency(4.0);
     pigeon.optimizeBusUtilization();
     yawTimestampQueue = PhoenixOdometryThread.getInstance().makeTimestampQueue();
     yawPositionQueue = PhoenixOdometryThread.getInstance().registerSignal(pigeon.getYaw());
@@ -64,6 +79,13 @@ public class GyroIOPigeon2 implements GyroIO {
     inputs.pitch_Rot2d = Rotation2d.fromDegrees(pitch.getValueAsDouble());
     inputs.roll_Rot2d = Rotation2d.fromDegrees(roll.getValueAsDouble());
     inputs.yawVel_radps = Units.degreesToRadians(yawVelocity.getValueAsDouble());
+    // Refreshed separately so a stale fault frame never marks the gyro disconnected.
+    stickyBootDuringEnable.refresh();
+    inputs.rebootedWhileEnabled = stickyBootDuringEnable.getValue();
+    // Refreshed separately too: a missed accel frame shouldn't drop yaw.
+    BaseStatusSignal.refreshAll(accelX, accelY);
+    inputs.accelX_mps2 = accelX.getValueAsDouble() * STANDARD_GRAVITY_mps2;
+    inputs.accelY_mps2 = accelY.getValueAsDouble() * STANDARD_GRAVITY_mps2;
 
     inputs.odometryYawTimestamps = yawTimestampQueue.stream().mapToDouble(Double::doubleValue).toArray();
     inputs.odometryYawPositions = yawPositionQueue.stream()

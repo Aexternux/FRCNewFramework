@@ -10,6 +10,8 @@ import frc.robot.application.auto.routines.ReferenceAutos;
 public class AutoSelector {
     private final ArrayList<ActionList> routines = new ArrayList<>();
     private int index;
+    private boolean hitCorrectionEnabled = true;
+    private boolean antiBeachEnabled = true;
 
     public AutoSelector() {
         routines.add(PlannedAuto.build());
@@ -22,11 +24,17 @@ public class AutoSelector {
     public void add(ActionList routine) { routines.add(routine); }
     public void nextAuto() { index = (index + 1) % routines.size(); }
     public ActionList getSelected() { return routines.get(index); }
+    public void toggleHitCorrection() { hitCorrectionEnabled = !hitCorrectionEnabled; }
+    public void toggleAntiBeach() { antiBeachEnabled = !antiBeachEnabled; }
+    public boolean isHitCorrectionEnabled() { return hitCorrectionEnabled; }
+    public boolean isAntiBeachEnabled() { return antiBeachEnabled; }
 
     public void periodic() {
         ActionList selected = getSelected();
         Logger.recordOutput("Elastic/Selected Auto/Name", selected.getName());
         Logger.recordOutput("Elastic/Selected Auto/Index", index);
         Logger.recordOutput("Elastic/Selected Auto/Start", selected.getStartDescription());
+        Logger.recordOutput("Elastic/Selected Auto/Hit Correction", hitCorrectionEnabled);
+        Logger.recordOutput("Elastic/Selected Auto/Anti Beach", antiBeachEnabled);
     }
 }

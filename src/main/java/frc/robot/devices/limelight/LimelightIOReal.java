@@ -21,7 +21,10 @@ public class LimelightIOReal implements LimelightIO {
 
     @Override
     public void updateInputs(LimelightIOInputs inputs) {
-        inputs.connected = LimelightHelpers.getLatestResults(name) != null;
+        // "Connected" means the camera is alive on NT: everything below reads the tv/botpose
+        // entries, which exist on any firmware. Don't probe the `json` dump here -- parsing it
+        // costs several ms per loop and the result was never used.
+        inputs.connected = LimelightHelpers.getLimelightNTTableEntry(name, "tv").exists();
 
         if (!inputs.connected) {
             inputs.hasTarget = false;
@@ -82,7 +85,7 @@ public class LimelightIOReal implements LimelightIO {
                 : new PoseObservation[] {observation};
 
         if (observation != null) {
-            Logger.recordOutput("Vision/Limelight/PoseEstimate", observation.pose());
+            Logger.recordOutput("Subsystems/Vision/Limelight/PoseEstimate", observation.pose());
         }
     }
 

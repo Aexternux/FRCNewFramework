@@ -10,7 +10,7 @@ import edu.wpi.first.apriltag.AprilTagFields;
 
 /**
  * Maps each AprilTag id to the field-relative robot heading (degrees) the drive should align to
- * when the TRACKING pathing override is active and that tag is the primary target.
+ * when the TRACK pathing override is active and that tag is the primary target.
  *
  * <p>Defaults are derived from the field layout: for each tag the target heading is "face the tag
  * square-on" — the tag's outward normal reversed, i.e. the heading a robot pointed straight at the

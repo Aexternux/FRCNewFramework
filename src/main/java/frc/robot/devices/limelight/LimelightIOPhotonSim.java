@@ -148,7 +148,7 @@ public class LimelightIOPhotonSim implements LimelightIO {
                     avgDist,
                     avgDist < mt1MaxDistance_m ? PoseType.MEGATAG_1 : PoseType.MEGATAG_1);
             inputs.poseObservations = new PoseObservation[] {observation};
-            Logger.recordOutput("Vision/PhotonSim/PoseEstimate", pose);
+            Logger.recordOutput("Subsystems/Vision/PhotonSim/PoseEstimate", pose);
         } else {
             inputs.poseObservations = new PoseObservation[0];
         }

@@ -5,6 +5,7 @@ import frc.robot.application.superstructure.SS.Flag;
 import frc.robot.devices.controller.OI;
 import frc.robot.subsystems.drive.Drive;
 import frc.robot.subsystems.drive.PathingMode;
+import frc.robot.subsystems.drive.PathingOverride;
 import frc.robot.subsystems.drive.SwerveInput;
 import frc.robot.util.Controls;
 import frc.robot.util.Util;
@@ -26,7 +27,7 @@ public class ControlScheme extends Controls{
 
     public void init() {
         drive.setCommand(PathingMode.FIELD_RELATIVE);
-        drive.setTrackingRequested(false);
+        drive.setOverride(PathingOverride.NONE);
         System.out.println("Controls initialized");
     }
 
@@ -43,9 +44,9 @@ public class ControlScheme extends Controls{
         drive.setInput(new SwerveInput(x_, y_, w_, throttle));
 
         if (OI.DR.getRightTriggerAxis() > TRACKING_TRIGGER_THRESHOLD) {
-            drive.setTrackingRequested(true);
+            drive.setOverride(PathingOverride.TRACKING);
         } else {
-            drive.setTrackingRequested(false);
+            drive.setOverride(PathingOverride.NONE);
         }
 
         ss.set(Flag.HOME, OI.DR.getBackButton());

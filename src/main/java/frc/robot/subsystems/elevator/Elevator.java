@@ -43,8 +43,8 @@ public class Elevator extends SubsystemBase<Elevator.Command> {
             new HallEffectConfig(HALL_EFFECT_CHANNEL)
                     .withInverted(HALL_INVERTED)
                     .withDebounce(HALL_DEBOUNCE_s, HALL_DEBOUNCE_TYPE));
-    private final Elevator2d measured2d = new Elevator2d("Elevator/Measured2d", new Color8Bit(200, 0, 0));
-    private final Elevator2d setpoint2d = new Elevator2d("Elevator/Setpoint2d", new Color8Bit(100, 100, 100));
+    private final Elevator2d measured2d = new Elevator2d(scope() + "/Measured2d", new Color8Bit(200, 0, 0));
+    private final Elevator2d setpoint2d = new Elevator2d(scope() + "/Setpoint2d", new Color8Bit(100, 100, 100));
 
     private double targetHeight_m = MIN_HEIGHT_m;
     private double voltsTarget = 0.0;
@@ -76,20 +76,20 @@ public class Elevator extends SubsystemBase<Elevator.Command> {
                 .withMotionMagic(MM_CRUISE_VELOCITY, MM_ACCELERATION, MM_JERK)
                 .withSim(SIM_MOTOR, METERS_TO_ROTATIONS, SIM_MOI);
 
-        motor = new Motor("Elevator/Motor", config);
+        motor = new Motor("Motor", scope(), config);
 
         setCommand(Command.IDLE);
     }
 
     @Override
-    protected void inputPeriodic() {
+    public void inputPeriodic() {
         motor.readInputs();
         hallEffect.readInputs();
         hallDetected = hallEffect.get();
     }
 
     @Override
-    protected void handle() {
+    public void handle() {
         switch (getCommand()) {
             case DISABLED:
                 motor.stop();
@@ -145,16 +145,16 @@ public class Elevator extends SubsystemBase<Elevator.Command> {
     }
 
     @Override
-    protected void outputPeriodic() {
+    public void outputPeriodic() {
         measured2d.setHeight(getHeight());
         setpoint2d.setHeight(targetHeight_m);
         measured2d.periodic();
         setpoint2d.periodic();
 
-        Logger.recordOutput("Elevator/Height_m", getHeight());
-        Logger.recordOutput("Elevator/Velocity_mps", motor.getVelocity());
-        Logger.recordOutput("Elevator/TargetHeight_m", targetHeight_m);
-        Logger.recordOutput("Elevator/Zeroed", isZeroed());
+        Logger.recordOutput(scope() + "/Height_m", getHeight());
+        Logger.recordOutput(scope() + "/Velocity_mps", motor.getVelocity());
+        Logger.recordOutput(scope() + "/TargetHeight_m", targetHeight_m);
+        Logger.recordOutput(scope() + "/Zeroed", isZeroed());
     }
 
 

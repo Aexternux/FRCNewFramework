@@ -139,7 +139,7 @@ public class LimelightIOSim implements LimelightIO {
         inputs.targetSpaceX_m = 0.0;
         inputs.targetSpaceZ_m = 0.0;
         inputs.poseObservations = new PoseObservation[0];
-        Logger.recordOutput("Vision/Limelight/SightLines", new Pose3d[0]);
+        Logger.recordOutput("Subsystems/Vision/Limelight/SightLines", new Pose3d[0]);
     }
 
     private void logSightLines(Pose3d cameraPose, List<Integer> visibleTags) {
@@ -150,6 +150,6 @@ public class LimelightIOSim implements LimelightIO {
                 sightLines.add(tagPose);
             });
         }
-        Logger.recordOutput("Vision/Limelight/SightLines", sightLines.toArray(new Pose3d[0]));
+        Logger.recordOutput("Subsystems/Vision/Limelight/SightLines", sightLines.toArray(new Pose3d[0]));
     }
 }

@@ -51,4 +51,11 @@ public interface SwerveModuleIO {
 
   /** Enable or disable brake mode on the drive motor. */
   public default void setBrake(boolean brake) {}
+
+  /**
+   * Scale drive/steer supply and stator current limits by the given factors. The drive supply
+   * limit is scaled from driveSupplyLimit_A instead of its configured baseline.
+   */
+  public default void setCurrentLimitFactor(
+      double driveFactor, double steerFactor, double driveSupplyLimit_A) {}
 }

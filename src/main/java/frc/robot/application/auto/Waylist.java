@@ -66,18 +66,34 @@ public class Waylist {
         if (poses.size() == 1) return poses.get(0);
 
         int segment = Math.min((int) pathProgress, poses.size() - 2);
+        double segT = Math.min(Math.max(pathProgress - segment, 0.0), 1.0);
+        double offPath_m = currentPose.getTranslation().getDistance(
+                interpolate(poses.get(segment), poses.get(segment + 1), segT).getTranslation());
+        double remaining_m = Math.max(lookahead_m - offPath_m, 0.0);
+
+        while (segment < poses.size() - 2) {
+            double length_m = poses.get(segment).getTranslation()
+                    .getDistance(poses.get(segment + 1).getTranslation());
+            double remainingInSeg_m = (1.0 - segT) * length_m;
+            if (remaining_m <= remainingInSeg_m) {
+                double t = segT + (length_m < 1e-6 ? 0.0 : remaining_m / length_m);
+                return interpolate(poses.get(segment), poses.get(segment + 1), t);
+            }
+            remaining_m -= remainingInSeg_m;
+            segment++;
+            segT = 0.0;
+        }
         Pose2d start = poses.get(segment);
         Pose2d end = poses.get(segment + 1);
         double length_m = start.getTranslation().getDistance(end.getTranslation());
-        double targetProgress = Math.min(pathProgress + (length_m < 1e-6 ? 0.0 : lookahead_m / length_m),
-                poses.size() - 1.0);
-        int targetSegment = Math.min((int) targetProgress, poses.size() - 2);
-        double t = targetProgress - targetSegment;
-        Pose2d targetStart = poses.get(targetSegment);
-        Pose2d targetEnd = poses.get(targetSegment + 1);
-        return new Pose2d(targetStart.getX() + t * (targetEnd.getX() - targetStart.getX()),
-                targetStart.getY() + t * (targetEnd.getY() - targetStart.getY()),
-                targetStart.getRotation().interpolate(targetEnd.getRotation(), t));
+        double t = length_m < 1e-9 ? 1.0 : Math.min(1.0, segT + remaining_m / length_m);
+        return interpolate(start, end, t);
+    }
+
+    private static Pose2d interpolate(Pose2d start, Pose2d end, double t) {
+        return new Pose2d(start.getX() + t * (end.getX() - start.getX()),
+                start.getY() + t * (end.getY() - start.getY()),
+                start.getRotation().interpolate(end.getRotation(), t));
     }
 
     public boolean isComplete(Pose2d currentPose) {

@@ -87,12 +87,12 @@ public class SS extends SubsystemBase<SS.Command> {
     }
 
     @Override
-    protected void inputPeriodic() {
+    public void inputPeriodic() {
         
     }
 
     @Override
-    protected void handle() {
+    public void handle() {
         if (has(Flag.HOME)) {
             setCommand(Command.HOMING);
         } else if (has(Flag.MANUAL_UP) || has(Flag.MANUAL_DOWN)) {
@@ -157,8 +157,8 @@ public class SS extends SubsystemBase<SS.Command> {
     }
 
     @Override
-    protected void outputPeriodic() {
+    public void outputPeriodic() {
         String[] active = flags.stream().map(Enum::name).toArray(String[]::new);
-        Logger.recordOutput("Superstructure/Flags", active);
+        Logger.recordOutput(scope() + "/Flags", active);
     }
 }

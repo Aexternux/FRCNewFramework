@@ -1,6 +1,7 @@
 package frc.robot.devices.gyro;
 
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.constants.Constants;
 
 import org.littletonrobotics.junction.Logger;
@@ -18,12 +19,20 @@ public class Gyro {
 
     public Gyro(String name) {
         this.name = name;
-        io = switch (Constants.currentMode) {
-            case REAL -> new GyroIOPigeon2();
-            // Drive deliberately uses wheel-delta heading until the gyro simulation supplies
-            // synchronized odometry samples.
-            case SIM, REPLAY -> new GyroIO() {};
-        };
+        switch (Constants.currentMode) {
+            case REAL:
+                io = new GyroIOPigeon2();
+                break;
+            case SIM:
+            case REPLAY:
+                // Drive deliberately uses wheel-delta heading until the gyro simulation supplies
+                // synchronized odometry samples.
+                io = new GyroIO() {};
+                break;
+            default:
+                io = new GyroIO() {};
+                break;
+        }
     }
 
     /** Reads and logs the most recent gyro inputs. Call once per robot loop. */
@@ -55,6 +64,11 @@ public class Gyro {
 
     public double getYawVelocity_radps() {
         return inputs.yawVel_radps;
+    }
+
+    /** Returns measured acceleration in the gyro's frame (X forward, Y left when mounted square). */
+    public Translation2d getAccel_mps2() {
+        return new Translation2d(inputs.accelX_mps2, inputs.accelY_mps2);
     }
 
     /** Returns synchronized high-rate timestamps used by Drive's odometry estimator. */

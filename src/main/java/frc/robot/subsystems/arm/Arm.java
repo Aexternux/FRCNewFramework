@@ -31,9 +31,9 @@ public class Arm extends SubsystemBase<Arm.Command>{
     private double targetAngle_deg = STOW_ANGLE_deg;
     private double targetVolts = IDLE_VOLTS;
 
-    private final Arm2d measured2d = new Arm2d("Arm/Measured2d", VISUAL_LENGTH_m,
+    private final Arm2d measured2d = new Arm2d(scope() + "/Measured2d", VISUAL_LENGTH_m,
             new Color8Bit(MEASURED_COLOR_RED, MEASURED_COLOR_GREEN, MEASURED_COLOR_BLUE));
-    private final Arm2d setpoint2d = new Arm2d("Arm/Setpoint2d", VISUAL_LENGTH_m,
+    private final Arm2d setpoint2d = new Arm2d(scope() + "/Setpoint2d", VISUAL_LENGTH_m,
             new Color8Bit(SETPOINT_COLOR_RED, SETPOINT_COLOR_GREEN, SETPOINT_COLOR_BLUE));
 
     public static Arm getInstance() {
@@ -61,7 +61,7 @@ public class Arm extends SubsystemBase<Arm.Command>{
                 .withSim(SIM_MOTOR, SIM_GEARING, SIM_MOI_kgm2)
                 .withMeasurementUnit(MEASUREMENT_UNIT);
 
-        this.armDrivingMotor_2 = new Motor("ArmMotorPair", this.armDrivingMotorConfig);
+        this.armDrivingMotor_2 = new Motor("ArmMotorPair", scope(), this.armDrivingMotorConfig);
 
         setCommand(Command.IDLE);
     }
@@ -72,7 +72,7 @@ public class Arm extends SubsystemBase<Arm.Command>{
     }
 
     @Override
-    protected void handle() {
+    public void handle() {
         switch(getCommand()) {
             case DISABLED:
                 armDrivingMotor_2.stop();
@@ -113,14 +113,14 @@ public class Arm extends SubsystemBase<Arm.Command>{
     }
 
     @Override
-    protected void outputPeriodic() {
+    public void outputPeriodic() {
         measured2d.setAngle(getCurrentAngle());
         setpoint2d.setAngle(targetAngle_deg);
         measured2d.periodic();
         setpoint2d.periodic();
 
-        Logger.recordOutput("Arm/Angle_deg", getCurrentAngle());
-        Logger.recordOutput("Arm/TargetAngle_deg", targetAngle_deg);
+        Logger.recordOutput(scope() + "/Angle_deg", getCurrentAngle());
+        Logger.recordOutput(scope() + "/TargetAngle_deg", targetAngle_deg);
     }
 
     public boolean atTargetAngle(double tol) {

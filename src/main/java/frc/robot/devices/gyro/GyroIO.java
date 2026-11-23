@@ -25,6 +25,11 @@ public interface GyroIO {
     public Rotation2d pitch_Rot2d = new Rotation2d();
     public Rotation2d roll_Rot2d = new Rotation2d();
     public double yawVel_radps = 0.0;
+    /** Measured acceleration along the gyro's X/Y axes, in m/s^2 (includes any gravity from tilt). */
+    public double accelX_mps2 = 0.0;
+    public double accelY_mps2 = 0.0;
+    /** True if the gyro rebooted while the robot was enabled (e.g. lost power) since code start. */
+    public boolean rebootedWhileEnabled = false;
     public double[] odometryYawTimestamps = new double[] {};
     public Rotation2d[] odometryYawPositions = new Rotation2d[] {};
   }

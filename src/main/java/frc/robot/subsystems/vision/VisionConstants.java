@@ -33,11 +33,12 @@ public final class VisionConstants {
     // ---- Per-limelight measurement noise ----
     // A camera's reported pose variance grows with distance^2 and shrinks with tag count:
     //     std = baseline * (avgTagDistance^2 / tagCount)
-    public static final double LINEAR_STD_BASELINE_m = 0.02;
-    public static final double ANGULAR_STD_BASELINE_rad = 0.06;
-
-    /** MegaTag2 derives heading from the gyro, so its rotation is given a huge (untrusted) std. */
-    public static final double MEGATAG2_ROTATION_STD_rad = 1.0e3;
+    public static final double LINEAR_STD_BASELINE_m = 0.06;
+    /**
+     * Heading is owned by the gyro. Every vision measurement (MegaTag1 and MegaTag2) gets a huge
+     * rotation std so the pose estimator never pulls heading toward the camera's estimate.
+     */
+    public static final double VISION_ROTATION_STD_rad = 1.0e3;
 
     // ---- Observation rejection ----
     public static final double MAX_AMBIGUITY = 0.3;
@@ -56,18 +57,18 @@ public final class VisionConstants {
     public static final double GATE_MAX_INNOVATION_SIGMA = 4.0;
 
     /** Near the gate threshold, inflate the measurement std dev by up to this multiplier. */
-    public static final double GATE_MAX_STD_DEV_MULTIPLIER = 2.0;
+    public static final double GATE_MAX_STD_DEV_MULTIPLIER = 4.0;
 
     // ---- Layer 3: adaptive trust from recent vision consistency ----
     /** Time horizon over which vision jitter affects dynamic measurement trust. */
     public static final double TRUST_TIME_CONSTANT_s = 0.75;
 
     /** Do not tighten measurement uncertainty until this many fresh camera samples are observed. */
-    public static final int TRUST_WARMUP_SAMPLES = 10;
+    public static final int TRUST_WARMUP_SAMPLES = 5;
 
     /** Hard limits on Layer 3's multiplier of Layer 1's camera standard deviations. */
-    public static final double TRUST_MIN_STD_DEV_MULTIPLIER = 0.75;
-    public static final double TRUST_MAX_STD_DEV_MULTIPLIER = 2.0;
+    public static final double TRUST_MIN_STD_DEV_MULTIPLIER = 0.6;
+    public static final double TRUST_MAX_STD_DEV_MULTIPLIER = 1.25;
 
     /** Only camera observations captured this close together may be fused into one measurement. */
     public static final double FUSION_TIMESTAMP_WINDOW_s = 0.020;

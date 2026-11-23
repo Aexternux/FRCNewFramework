@@ -36,6 +36,7 @@ import frc.robot.util.Controls;
 import frc.robot.util.PerfTracker;
 
 import org.littletonrobotics.junction.LogFileUtil;
+import org.littletonrobotics.junction.LoggedPowerDistribution;
 import org.littletonrobotics.junction.LoggedRobot;
 import org.littletonrobotics.junction.Logger;
 import org.littletonrobotics.junction.networktables.NT4Publisher;
@@ -86,7 +87,7 @@ public class Robot extends LoggedRobot {
 
         switch (Constants.currentMode) {
             case REAL:
-                Logger.addDataReceiver(new WPILOGWriter("U/logs/" + BuildConstants.GIT_BRANCH));
+                Logger.addDataReceiver(new WPILOGWriter("/U/logs/" + BuildConstants.GIT_BRANCH));
                 Logger.addDataReceiver(new NT4Publisher());
                 break;
 
@@ -102,6 +103,8 @@ public class Robot extends LoggedRobot {
                 break;
 
         }
+        // Logs PDH/PDP voltage, total current and per-channel currents (auto-detects module type/ID).
+        LoggedPowerDistribution.getInstance();
         Logger.start();
 
         instantiateSubsystems();
@@ -132,7 +135,7 @@ public class Robot extends LoggedRobot {
     public void robotPeriodic() {
         Threads.setCurrentThreadPriority(true, THREAD_PRIORITY_CRITICAL);
 
-        if (!DriverStation.isAutonomous()) {
+        if (DriverStation.isTeleopEnabled()) {
             controls.update();
         }
         if (DriverStation.isAutonomous() && auto != null) {
@@ -156,6 +159,9 @@ public class Robot extends LoggedRobot {
 
     @Override
     public void disabledInit() {
+        if (auto != null) {
+            auto.stop();
+        }
     }
 
     @Override
@@ -163,6 +169,12 @@ public class Robot extends LoggedRobot {
         autoSelector.periodic();
         if (OI.DR.getAButtonPressed()) {
             autoSelector.nextAuto();
+        }
+        if (OI.DR.getXButtonPressed()) {
+            autoSelector.toggleHitCorrection();
+        }
+        if (OI.DR.getYButtonPressed()) {
+            autoSelector.toggleAntiBeach();
         }
     }
 
@@ -172,6 +184,8 @@ public class Robot extends LoggedRobot {
         // measurement out of the estimator while Auto establishes the selected start pose.
         vision.disable();
         auto = new Auto(autoSelector.getSelected());
+        auto.setAntiBeachEnabled(autoSelector.isAntiBeachEnabled());
+        drive.setCollisionCorrectionEnabled(autoSelector.isHitCorrectionEnabled());
         auto.start();
         vision.resetPose(drive.getPose());
         // Photon sim is currently driven from Drive's estimated pose. Fusing those delayed
@@ -188,6 +202,9 @@ public class Robot extends LoggedRobot {
 
     @Override
     public void teleopInit() {
+        if (auto != null) {
+            auto.stop();
+        }
         vision.enable();
         controls.init();
     }
