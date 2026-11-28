@@ -39,6 +39,8 @@ public class Motor {
 
         if (mode == Mode.REAL) {
             this.io = new MotorIOTalonFX(config);
+        } else if (Constants.physicsSim) {
+            this.io = new MotorIOPhysicsSim(subsystemName + "/" + name, config);
         } else {
             this.io = new MotorIOSim(config);
         }

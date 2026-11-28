@@ -64,7 +64,11 @@ public class SwerveModule {
                 this.io = new SwerveModuleIOTalonFX(constants);
                 break;
             case SIM:
-                this.io = new SwerveModuleIOSim(constants);
+                if (Constants.physicsSim) {
+                    this.io = new SwerveModuleIOPhysicsSim(index, constants);
+                } else {
+                    this.io = new SwerveModuleIOSim(constants);
+                }
                 break;
             default:
                 this.io = new SwerveModuleIO() {}; // REPLAY: blank IO, inputs replayed from log

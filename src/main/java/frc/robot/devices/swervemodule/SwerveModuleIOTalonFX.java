@@ -323,6 +323,19 @@ public class SwerveModuleIOTalonFX implements SwerveModuleIO {
     talon.getConfigurator().apply(limits, 0.0);
   }
 
+  /** The module's devices (for simulation bridges; robot code commands them through this IO). */
+  public TalonFX getDriveTalon() {
+    return driveTalon;
+  }
+
+  public TalonFX getTurnTalon() {
+    return turnTalon;
+  }
+
+  public CANcoder getCancoder() {
+    return cancoder;
+  }
+
   private static CurrentLimitsConfigs copyLimits(CurrentLimitsConfigs src) {
     return new CurrentLimitsConfigs()
         .withSupplyCurrentLimit(src.SupplyCurrentLimit)

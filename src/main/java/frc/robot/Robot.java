@@ -14,6 +14,7 @@
 package frc.robot;
 
 
+import frc.robot.sim.PhysicsSim;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.Threads;
@@ -227,6 +228,9 @@ public class Robot extends LoggedRobot {
 
     @Override
     public void simulationPeriodic() {
+        if (PhysicsSim.isEnabled()) {
+            PhysicsSim.getInstance().periodic();
+        }
     }
 
     

@@ -206,4 +206,13 @@ public class MotorIOTalonFX implements MotorIO {
     public void zeroPosition(double position) {
         talon.setPosition(position);
     }
+
+    /** The leader TalonFX (for simulation bridges; robot code commands it through this IO). */
+    public TalonFX getTalon() {
+        return talon;
+    }
+
+    public List<TalonFX> getFollowers() {
+        return followers;
+    }
 }

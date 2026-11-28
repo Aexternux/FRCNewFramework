@@ -24,9 +24,15 @@ public class Gyro {
                 io = new GyroIOPigeon2();
                 break;
             case SIM:
+                // The physics simulator's Pigeon2 reads the robot's real heading. Without it Drive
+                // falls back to wheel-delta heading.
+                if (Constants.physicsSim) {
+                    io = new GyroIOPhysicsSim();
+                } else {
+                    io = new GyroIO() {};
+                }
+                break;
             case REPLAY:
-                // Drive deliberately uses wheel-delta heading until the gyro simulation supplies
-                // synchronized odometry samples.
                 io = new GyroIO() {};
                 break;
             default:

@@ -46,6 +46,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.constants.Constants;
+import frc.robot.sim.PhysicsSim;
 import frc.robot.constants.Constants.Mode;
 import frc.robot.devices.gyro.Gyro;
 import frc.robot.devices.swervemodule.SwerveModule;
@@ -346,7 +347,8 @@ public class Drive extends SubsystemBase<PathingMode> {
         //
         // -0.002 is this robot's existing real value and is untouched/unverified; the real geared
         // steer has more lag than sim, so this likely wants tuning ON the robot, not in sim.
-        double kSkew = RobotBase.isSimulation() ? SIM_ANTISKEW_TIME_s : REAL_ANTISKEW_TIME_s;
+        // (the physics simulator runs the real geared steer, so it takes the real value)
+        double kSkew = RobotBase.isSimulation() && !Constants.physicsSim ? SIM_ANTISKEW_TIME_s : REAL_ANTISKEW_TIME_s;
 
         outputSpeeds.vxMetersPerSecond += px * outputSpeeds.omegaRadiansPerSecond * kSkew;
         outputSpeeds.vyMetersPerSecond += py * outputSpeeds.omegaRadiansPerSecond * kSkew;
@@ -811,6 +813,11 @@ public class Drive extends SubsystemBase<PathingMode> {
     public void resetGyroAndPose(double gyroAngle, Pose2d currentPose) {
         clearMotionState();
         double adjustedAngle = adjustForAlliance(gyroAngle);
+        if (PhysicsSim.isEnabled()) {
+            // the physics robot is put where the code says it starts (before the gyro is zeroed: see placeRobot)
+            PhysicsSim.getInstance().placeRobot(new Pose2d(currentPose.getX(), currentPose.getY(),
+                    Rotation2d.fromDegrees(adjustedAngle)));
+        }
 
         gyro.zero(adjustedAngle);
         rawGyroRotation = Rotation2d.fromDegrees(adjustedAngle);

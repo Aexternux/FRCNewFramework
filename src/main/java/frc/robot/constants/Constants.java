@@ -28,6 +28,11 @@ import edu.wpi.first.wpilibj.RobotBase;
 public final class Constants {
     public static final Mode simMode = Mode.SIM;
     public static final Mode currentMode = RobotBase.isReal() ? Mode.REAL : simMode;
+    /**
+     * In SIM: run the robot's own TalonFX / CANcoder / Pigeon2 IO against the CAD physics simulator
+     * (frc.robot.sim.PhysicsSim) instead of the idealised DCMotorSim models (MotorIOSim etc.).
+     */
+    public static final boolean physicsSim = true;
     public static final double globalDelta_s = 0.02; // 0.02 = 50Hz
     public static final double globalDelta_Hz = 1.0 / globalDelta_s; // 0.02 = 50Hz
 

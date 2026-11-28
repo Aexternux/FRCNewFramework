@@ -95,6 +95,11 @@ public class GyroIOPigeon2 implements GyroIO {
     yawPositionQueue.clear();
   }
 
+  /** The Pigeon2 (for simulation bridges). */
+  public Pigeon2 getPigeon() {
+    return pigeon;
+  }
+
   @Override
   public void zero(double angle) {
     pigeon.setYaw(angle);
